@@ -13,9 +13,12 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante.
  *
  * Fluidité : les redirections se font si possible SANS recharger la page (comme le
- * site lui-même, voir softGo), le nettoyage cherche chaque sélecteur une seule fois,
- * et aucun écouteur de geste n'est posé sur toute la page (ce qui ferait attendre
- * le script à chaque défilement) : seulement sur une vidéo plein écran.
+ * site lui-même, voir softGo), juste après la navigation du site (pas pendant) ; le
+ * nettoyage ne relit que ce qui vient d'apparaître (la page entière au plus toutes les
+ * 2 s), cherche chaque sélecteur une seule fois, et mesure les vidéos au moment où le
+ * navigateur calcule déjà la mise en page ; aucun écouteur de geste n'est posé sur
+ * toute la page (ce qui ferait attendre le script à chaque défilement) : seulement
+ * sur une vidéo plein écran.
  *
  * Sécurité : les règles viennent d'un fichier téléchargé. Aucun de leurs textes
  * n'est inséré comme du HTML, et chaque redirection est revérifiée après
@@ -312,11 +315,45 @@ const RUNTIME = `
     return t;
   }
 
-  function clean() {
+  // Éléments qui correspondent au sélecteur : dans toute la page (roots = null), ou
+  // seulement dans les morceaux qui viennent d'apparaître (roots = liste d'éléments).
+  // Un sélecteur comme « article span » reste juste : matches() et querySelectorAll()
+  // tiennent compte des ancêtres, même hors du morceau.
+  function find(sel, roots) {
+    if (!roots) return document.querySelectorAll(sel);
+    var out = [];
+    for (var i = 0; i < roots.length; i++) {
+      var r = roots[i];
+      if (r.matches(sel)) out.push(r);
+      var sub = r.querySelectorAll(sel);
+      for (var j = 0; j < sub.length; j++) out.push(sub[j]);
+    }
+    return out;
+  }
+
+  // Ne garde que les morceaux encore dans la page, et pas ceux déjà contenus dans un autre.
+  var stamp = 0;
+  function topRoots(list) {
+    stamp++;
+    var keep = [];
+    for (var i = 0; i < list.length; i++) if (list[i].isConnected) list[i].__sansReels = stamp;
+    for (var j = 0; j < list.length; j++) {
+      var el = list[j];
+      if (el.__sansReels !== stamp) continue;
+      var inside = false;
+      for (var p = el.parentElement; p; p = p.parentElement) {
+        if (p.__sansReels === stamp) { inside = true; break; }
+      }
+      if (!inside) { keep.push(el); el.__sansReels = -1; } // -1 : pas compté deux fois
+    }
+    return keep;
+  }
+
+  function clean(roots) {
     addStyle();
     for (var i = 0; i < hideSels.length; i++) {
       var rules = hideBySel[hideSels[i]], list;
-      try { list = document.querySelectorAll(hideSels[i]); } catch (e) { continue; }
+      try { list = find(hideSels[i], roots); } catch (e) { continue; }
       for (var j = 0; j < list.length; j++) {
         var el = list[j], txt = null;
         for (var q = 0; q < rules.length; q++) {
@@ -343,7 +380,7 @@ const RUNTIME = `
     }
     for (var k = 0; k < rewrite.length; k++) {
       var links;
-      try { links = document.querySelectorAll(rewrite[k].selector); } catch (e) { continue; }
+      try { links = find(rewrite[k].selector, roots); } catch (e) { continue; }
       for (var m = 0; m < links.length; m++) {
         if (links[m].getAttribute('data-sans-reels-href') === rewrite[k].href) continue; // déjà fait
         links[m].setAttribute('href', rewrite[k].href);
@@ -370,23 +407,60 @@ const RUNTIME = `
     post({ type: 'unread', count: n });
   }
 
-  function run() {
+  // roots absent : toute la page (navigation, chargement). Sinon : seulement ces morceaux.
+  var lastFull = 0;
+  function run(roots) {
     reportPath();
     reportUnread();
     if (!checkUrl()) {
-      clean();
-      if (armVideos) armVideos();
-      if (checkFeedEnd) checkFeedEnd();
+      if (!roots) lastFull = Date.now();
+      clean(roots || null);
+      afterLayout();
     }
   }
   var armVideos = null; // défini plus bas si le blocage du glissement est actif
   var checkFeedEnd = null; // défini plus bas si « Tu as tout vu » est actif
 
-  // Regroupe les nombreux changements de la page en un seul nettoyage.
-  var timer = null;
-  function schedule() {
+  // Mesures (taille des vidéos, position du fil) au moment où le navigateur calcule
+  // de toute façon la mise en page, juste avant d'afficher : jamais de calcul forcé en plus.
+  var frameQueued = false;
+  function afterLayout() {
+    if (frameQueued || (!armVideos && !checkFeedEnd)) return;
+    frameQueued = true;
+    requestAnimationFrame(function () {
+      frameQueued = false;
+      if (armVideos) armVideos();
+      if (checkFeedEnd) checkFeedEnd();
+    });
+  }
+
+  // Regroupe les nombreux changements de la page en un seul nettoyage, limité à ce qui
+  // vient d'apparaître (avant : toute la page relue jusqu'à 8 fois par seconde, ce qui
+  // coûtait cher sur un long fil). Filet de sécurité : la page entière est relue au plus
+  // toutes les 2 s tant qu'elle change (un texte modifié à l'intérieur d'un élément…).
+  var FULL_EVERY = 2000, MAX_PENDING = 400;
+  var timer = null, pending = [], pendingAll = false;
+  function onMutations(list) {
+    if (!pendingAll) {
+      for (var i = 0; i < list.length; i++) {
+        var added = list[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          // Texte ajouté : c'est son élément parent qui a changé.
+          pending.push(added[j].nodeType === 1 ? added[j] : list[i].target);
+        }
+      }
+      if (pending.length > MAX_PENDING) { pendingAll = true; pending = []; }
+    }
     if (timer) return;
-    timer = setTimeout(function () { timer = null; run(); }, 120);
+    timer = setTimeout(function () {
+      timer = null;
+      var all = pendingAll || Date.now() - lastFull > FULL_EVERY;
+      var roots = all ? null : topRoots(pending);
+      pending = [];
+      pendingAll = false;
+      if (roots && !roots.length) return;
+      run(roots);
+    }, 120);
   }
 
   // --- 4. Surveillance ------------------------------------------------------
@@ -395,11 +469,20 @@ const RUNTIME = `
     var original = history[name];
     history[name] = function () {
       var result = original.apply(this, arguments);
-      run();
+      // Juste APRÈS la navigation du site (micro-tâche) : une redirection lancée pendant
+      // qu'il change lui-même de page pouvait passer inaperçue de son routeur, et finir
+      // en rechargement complet. Toujours avant l'affichage de la page interdite.
+      afterSite();
       return result;
     };
   });
-  window.addEventListener('popstate', run);
+  var afterQueued = false;
+  function afterSite() {
+    if (afterQueued) return;
+    afterQueued = true;
+    Promise.resolve().then(function () { afterQueued = false; run(); });
+  }
+  window.addEventListener('popstate', function () { run(); });
 
   // b) Clic sur un lien interdit ou réécrit : on intercepte avant le site.
   document.addEventListener('click', function (e) {
@@ -417,7 +500,7 @@ const RUNTIME = `
 
   // c) Contenu ajouté dynamiquement (scroll infini, changement d'onglet…).
   //    On observe document (et pas <html>, qui peut ne pas encore exister).
-  new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
+  new MutationObserver(onMutations).observe(document, { childList: true, subtree: true });
 
   // --- 5. Vidéos plein écran : pas de glissement vers la suivante ------------
   // Instagram ouvre un Reel reçu en message PAR-DESSUS la conversation, sans
@@ -585,9 +668,9 @@ const RUNTIME = `
   }, 500);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) run(); });
 
-  window.__SANS_REELS__ = { run: run };
+  window.__SANS_REELS__ = { run: function () { run(); } };
   run();
-  document.addEventListener('DOMContentLoaded', run);
+  document.addEventListener('DOMContentLoaded', function () { run(); });
 })();
 true;
 `;

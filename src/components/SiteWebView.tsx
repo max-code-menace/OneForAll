@@ -80,6 +80,13 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef 
   // appliquées quand le réseau est caché (un rechargement en arrière-plan), voir plus bas.
   const fresh = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
   const [script, setScript] = useState(fresh);
+  // Adresse de départ déjà redirigée (ex. Instagram : directement le fil Abonnements) : sinon
+  // la 1re page est annulée puis relancée à la bonne adresse, une étape d'attente pour rien.
+  const startUrl = () => {
+    const a = findUrlAction(platforms, platform.startUrl, isEnabled);
+    return a?.type === 'redirect' ? a.url : platform.startUrl;
+  };
+  const [startUri, setStartUri] = useState(startUrl);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   // Domaines des réseaux (les liens entre réseaux restent dans l'app, filtrés).
@@ -123,6 +130,7 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef 
     const timer = setTimeout(() => {
       nextCause.current = 'règles changées';
       setScript(fresh);
+      setStartUri(startUrl());
       setAttempt((n) => n + 1);
     }, 1500);
     return () => clearTimeout(timer);
@@ -253,7 +261,7 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef 
         key={attempt}
         ref={webRef}
         style={styles.flex}
-        source={{ uri: platform.startUrl }}
+        source={{ uri: startUri }}
         // Plateformes qui refusent les WebView (Google, Facebook) : on se présente comme Safari.
         applicationNameForUserAgent={platform.userAgent ? SAFARI_APP_NAME : undefined}
         // --- Rester connecté -----------------------------------------------

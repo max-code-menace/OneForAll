@@ -244,6 +244,39 @@ async function browserTests() {
   });
   await page.waitForTimeout(300);
   assert.equal(await hidden(page, '#late'), true, 'Reel chargé dynamiquement masqué');
+  // Seul ce qui vient d'apparaître est relu : un texte « Sponsorisé » ajouté DANS une
+  // publication déjà là est vu tout de suite…
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'adLater';
+    a.innerHTML = '<span>Martin</span>';
+    document.getElementById('main').appendChild(a);
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#adLater'), false, 'publication normale visible');
+  await page.evaluate(() => {
+    const s = document.createElement('span');
+    s.textContent = 'Sponsorisé';
+    document.getElementById('adLater').appendChild(s);
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#adLater'), true, 'pub ajoutée dans une publication existante masquée');
+  // …et un texte changé à l'intérieur d'un élément l'est par la relecture complète (≤ 2 s).
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'adText';
+    a.innerHTML = '<span><b>Spon</b></span>';
+    document.getElementById('main').appendChild(a);
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector('#adText b').appendChild(document.createTextNode('sorisé')));
+  await page.waitForTimeout(150);
+  for (let i = 0; i < 25 && !(await hidden(page, '#adText')); i++) {
+    // la page continue de changer (fil qui se charge) : la relecture complète finit par passer
+    await page.evaluate(() => document.getElementById('main').appendChild(document.createElement('div')));
+    await page.waitForTimeout(150);
+  }
+  assert.equal(await hidden(page, '#adText'), true, 'texte changé dans un élément : masqué par la relecture complète');
 
   // Navigation interne (pushState) vers /reels/ => retour accueil.
   await page.evaluate(() => history.pushState({}, '', '/reels/'));
