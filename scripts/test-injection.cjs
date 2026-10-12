@@ -77,6 +77,16 @@ function urlTests() {
     assert.equal(isSafeTarget(t), false, t);
   }
 
+  // Couleur envoyée par la page : seuls trois nombres sont gardés, le reste est refusé.
+  const { parseSiteColor } = require('../src/lib/siteColor.ts');
+  assert.deepEqual(parseSiteColor('#fff'), { css: 'rgb(255, 255, 255)', dark: false });
+  assert.deepEqual(parseSiteColor('#000000'), { css: 'rgb(0, 0, 0)', dark: true });
+  assert.deepEqual(parseSiteColor('rgb(15, 15, 15)'), { css: 'rgb(15, 15, 15)', dark: true });
+  assert.deepEqual(parseSiteColor('rgba(255, 255, 255, 0.98)'), { css: 'rgb(255, 255, 255)', dark: false });
+  for (const bad of ['rgba(0, 0, 0, 0)', 'transparent', 'red', 'rgb(300, 0, 0)', 'url(x)', '#12345', 12, null, 'x'.repeat(50)]) {
+    assert.equal(parseSiteColor(bad), null, String(bad));
+  }
+
   // TikTok est banni, partout, y compris via les liens courts. Les noms qui y ressemblent ne le sont pas.
   const banned = (u) => findBannedSite(u);
   for (const u of [
@@ -605,6 +615,25 @@ async function browserTests() {
   await bare.setContent('<p>x</p>');
   await bare.evaluate(setPageHiddenCommand(true));
   await bare.close();
+
+  // --- Couleur du haut du site (zone de l'heure) : envoyée à l'app, puis vérifiée par elle ---
+  for (const [head, want] of [
+    ['<meta name="theme-color" content="#000000">', '#000000'],
+    ['<style>body{background:rgb(250, 250, 250)}</style>', 'rgb(250, 250, 250)'],
+  ]) {
+    const tp = await browser.newPage();
+    await tp.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head>${head}</head><body>x</body></html>` }));
+    await tp.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await tp.addInitScript(buildInjectedScript(PLATFORMS, defaults));
+    await tp.goto('https://www.instagram.com/p/AAA/');
+    await tp.waitForTimeout(300);
+    const themes = (await tp.evaluate(() => window.__msgs)).filter((m) => m.type === 'theme').map((m) => m.color);
+    assert.equal(themes[themes.length - 1], want, `couleur du site : ${themes}`);
+    await tp.close();
+  }
 
   // --- YouTube ---
   page = await open('https://m.youtube.com/');

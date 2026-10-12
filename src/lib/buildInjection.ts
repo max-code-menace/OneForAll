@@ -407,13 +407,34 @@ const RUNTIME = `
     post({ type: 'unread', count: n });
   }
 
+  // Couleur du haut de la page (barre du site), pour que l'app colore la zone de l'heure
+  // et de la batterie pareil : la couleur « theme-color » du site, sinon le fond de la page.
+  // Lue au plus une fois par relecture complète (navigation, ≤ 2 s), envoyée si elle change.
+  var lastTheme = '';
+  function reportTheme() {
+    var color = '';
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    for (var i = 0; i < metas.length && !color; i++) {
+      var media = metas[i].getAttribute('media');
+      if (!media || (window.matchMedia && window.matchMedia(media).matches)) color = metas[i].getAttribute('content') || '';
+    }
+    if (!color && document.body) {
+      color = getComputedStyle(document.body).backgroundColor;
+      if (/^rgba\(.*,\s*0\)$|^transparent$/.test(color)) color = getComputedStyle(document.documentElement).backgroundColor;
+    }
+    color = String(color).slice(0, 40);
+    if (!color || color === lastTheme) return;
+    lastTheme = color;
+    post({ type: 'theme', color: color });
+  }
+
   // roots absent : toute la page (navigation, chargement). Sinon : seulement ces morceaux.
-  var lastFull = 0;
+  var lastFull = 0, themeQueued = false;
   function run(roots) {
     reportPath();
     reportUnread();
     if (!checkUrl()) {
-      if (!roots) lastFull = Date.now();
+      if (!roots) { lastFull = Date.now(); themeQueued = true; }
       clean(roots || null);
       afterLayout();
     }
@@ -425,10 +446,11 @@ const RUNTIME = `
   // de toute façon la mise en page, juste avant d'afficher : jamais de calcul forcé en plus.
   var frameQueued = false;
   function afterLayout() {
-    if (frameQueued || (!armVideos && !checkFeedEnd)) return;
+    if (frameQueued || (!armVideos && !checkFeedEnd && !themeQueued)) return;
     frameQueued = true;
     requestAnimationFrame(function () {
       frameQueued = false;
+      if (themeQueued) { themeQueued = false; reportTheme(); }
       if (armVideos) armVideos();
       if (checkFeedEnd) checkFeedEnd();
     });
@@ -667,6 +689,14 @@ const RUNTIME = `
     if (location.href !== lastHref) { lastHref = location.href; run(); }
   }, 500);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) run(); });
+
+  // Mode sombre de l'iPhone changé : le site change de couleur, la zone du haut aussi.
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+      themeQueued = true;
+      afterLayout();
+    });
+  } catch (e) {}
 
   window.__SANS_REELS__ = { run: function () { run(); } };
   run();

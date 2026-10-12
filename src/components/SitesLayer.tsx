@@ -1,3 +1,4 @@
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
 import { Animated, BackHandler, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIntro } from '../lib/intro';
 import { readLastSite, useOpenSites } from '../lib/openSites';
 import { useRules } from '../lib/rules';
+import type { SiteColor } from '../lib/siteColor';
 import { useSettings } from '../lib/settings';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, PUSH, useReduceMotion, useTheme } from '../lib/theme';
@@ -133,9 +135,12 @@ function SiteScreen({ platform, visible, onHome }: { platform: Platform; visible
   const insets = useSafeAreaInsets();
   // Petit tuto la 1re fois qu'on affiche un site (une fois le bandeau affiché).
   const tour = useTour('browser', TOUR, visible, 1100);
+  // Zone de l'heure et de la batterie : de la couleur du haut du site, comme une vraie app.
+  const [color, setColor] = useState<SiteColor | null>(null);
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: color?.css ?? t.bg, paddingTop: insets.top }}>
+      {visible && <StatusBar style={(color ? color.dark : t.dark) ? 'light' : 'dark'} />}
       {visible && <UsageTimer id={platform.id} />}
       <SiteWebView
         platform={platform}
@@ -143,6 +148,7 @@ function SiteScreen({ platform, visible, onHome }: { platform: Platform; visible
         welcome={SITE_TEXT[platform.id]?.toast}
         holdWelcome={tour.running}
         toastRef={tour.target('toast')}
+        onSiteColor={setColor}
       />
 
       {/* Repères du tuto : zones des gestes. */}

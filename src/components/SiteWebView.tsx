@@ -11,6 +11,7 @@ import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { INSIDE_HOSTS } from '../lib/sites';
 import { useTheme } from '../lib/theme';
+import { parseSiteColor, type SiteColor } from '../lib/siteColor';
 import { saveUnread } from '../lib/unread';
 import { findUrlAction, hostMatches, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
@@ -37,13 +38,15 @@ type Props = {
   holdWelcome?: boolean;
   /** Le bandeau, pour que le tuto puisse le montrer. */
   toastRef?: RefObject<View | null>;
+  /** Couleur du haut du site (pour colorer la zone de l'heure et de la batterie). */
+  onSiteColor?: (color: SiteColor) => void;
 };
 
 /**
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef }: Props) {
+export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef, onSiteColor }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -226,6 +229,11 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef 
           if (platform.id === 'instagram') syncAppBadge(count);
         }
         break;
+      case 'theme': {
+        const color = onThisSite ? parseSiteColor(m.color) : null;
+        if (color) onSiteColor?.(color);
+        break;
+      }
       case 'feedLocked':
         showBanner('Les vidéos suivantes sont bloquées');
         break;
@@ -288,6 +296,12 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef 
         // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
+        // Vidéos qui démarrent seules (sans le son), comme dans la vraie app (choix de l'utilisateur).
+        // Sinon une vidéo YouTube ouverte peut demander un 2e appui sur Lecture.
+        mediaPlaybackRequiresUserAction={false}
+        // Appui long sur un lien : pas d'aperçu à la Safari (pas comme une app, et l'aperçu
+        // charge la page à part, peut-être sans nos blocages).
+        allowsLinkPreview={false}
         // Tirer la page vers le bas = recharger.
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
