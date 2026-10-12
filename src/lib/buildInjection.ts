@@ -10,8 +10,12 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  *   3. masque en JS ce que le CSS ne sait pas cibler (texte, ancêtre…) ;
  *   4. recommence à chaque changement de la page (MutationObserver = scroll infini)
  *      et à chaque navigation interne (history.pushState des sites "SPA") ;
- *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante ;
- *   6. signale à l'app un glissement depuis le bord de l'écran (changement d'onglet).
+ *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante.
+ *
+ * Fluidité : les redirections se font si possible SANS recharger la page (comme le
+ * site lui-même, voir softGo), le nettoyage cherche chaque sélecteur une seule fois,
+ * et aucun écouteur de geste n'est posé sur toute la page (ce qui ferait attendre
+ * le script à chaque défilement) : seulement sur une vidéo plein écran.
  *
  * Sécurité : les règles viennent d'un fichier téléchargé. Aucun de leurs textes
  * n'est inséré comme du HTML, et chaque redirection est revérifiée après
@@ -46,18 +50,12 @@ export function buildConfig(
   });
 }
 
-/** Bords de l'écran qui captent le glissement (pt), et distance à parcourir vers l'intérieur. */
-export const EDGE_WIDTH = 22;
-export const EDGE_THRESHOLD = 50;
-
 /** Script pour `injectedJavaScriptBeforeContentLoaded` (s'exécute avant la page). */
 export function buildInjectedScript(
   platforms: Platform[],
   isEnabled: (ruleId: string) => boolean,
 ): string {
-  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)))
-    .replace(/__EDGE__/g, String(EDGE_WIDTH))
-    .replace(/__THRESHOLD__/g, String(EDGE_THRESHOLD));
+  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
 }
 
 /**
@@ -76,33 +74,14 @@ const RUNTIME = `
 
   var ALL = __CONFIG__;
 
+  function norm(s) { return (s || '').replace(/\\s+/g, ' ').trim().toLowerCase(); }
+
   // Envoie un message à l'app (pour afficher "Reel bloqué", etc.).
   function post(msg) {
     try {
       if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
     } catch (e) {}
   }
-
-  // --- 0. Bords de l'écran : glisser vers l'intérieur = onglet suivant / précédent --
-  // Détecté ici, dans la page, pour que les appuis près des bords restent aux
-  // boutons du site (une zone posée par-dessus la page les avalerait tous).
-  var edge = null;
-  window.addEventListener('touchstart', function (e) {
-    edge = null;
-    if (e.touches.length !== 1) return;
-    var x = e.touches[0].clientX, W = window.innerWidth;
-    if (x <= __EDGE__) edge = { dir: -1, x: x, y: e.touches[0].clientY };
-    else if (x >= W - __EDGE__) edge = { dir: 1, x: x, y: e.touches[0].clientY };
-  }, { capture: true, passive: true });
-  window.addEventListener('touchcancel', function () { edge = null; }, true);
-  window.addEventListener('touchend', function (e) {
-    var g = edge, t = e.changedTouches && e.changedTouches[0];
-    edge = null;
-    if (!g || !t) return;
-    var dx = t.clientX - g.x, dy = t.clientY - g.y;
-    var inward = g.dir === 1 ? -dx : dx;
-    if (inward >= __THRESHOLD__ && Math.abs(dy) < Math.abs(dx)) post({ type: 'edgeSwipe', dir: g.dir });
-  }, true);
 
   function hostMatches(host, hosts) {
     for (var i = 0; i < hosts.length; i++) {
@@ -122,6 +101,15 @@ const RUNTIME = `
     lockFeed = lockFeed || ALL[i].lockFeed;
   }
   if (!css.trim() && !hide.length && !rewrite.length && !urls.length && !lockFeed) return;
+
+  // Règles de masquage regroupées par sélecteur : chaque sélecteur n'est cherché
+  // qu'une fois par nettoyage (ex. « article span » sert à 7 règles de texte).
+  var hideSels = [], hideBySel = {};
+  for (var h = 0; h < hide.length; h++) {
+    var hs = hide[h].selector;
+    if (!hideBySel[hs]) { hideBySel[hs] = []; hideSels.push(hs); }
+    hideBySel[hs].push({ closest: hide[h].closest, text: hide[h].text ? norm(hide[h].text) : null });
+  }
 
   // --- 1. URLs -------------------------------------------------------------
   // Même logique que isAlreadyThere (src/lib/urlRules.ts) : pas de redirection en boucle.
@@ -185,15 +173,48 @@ const RUNTIME = `
     document.addEventListener('DOMContentLoaded', render);
   }
 
-  // Vérifie l'URL actuelle. Renvoie true si on quitte la page.
+  // Navigation « douce » vers un chemin du même site : comme le site le fait lui-même
+  // (history + événement popstate, que son routeur écoute), donc SANS recharger toute
+  // la page. Si le site ne réagit pas (aucun élément ajouté en 800 ms), on recharge
+  // à la bonne adresse. Pendant le chargement initial : navigation classique.
+  function softGo(target, replace) {
+    if (document.readyState === 'loading' || !document.body || typeof PopStateEvent !== 'function') {
+      leaving = true;
+      if (replace) location.replace(target); else location.assign(target);
+      return;
+    }
+    var reacted = false;
+    var watch = new MutationObserver(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].addedNodes.length) { reacted = true; watch.disconnect(); return; }
+      }
+    });
+    watch.observe(document.body, { childList: true, subtree: true });
+    try {
+      history[replace ? 'replaceState' : 'pushState'](history.state, '', target);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+    } catch (e) {
+      watch.disconnect();
+      leaving = true;
+      location.assign(target);
+      return;
+    }
+    var expected = location.href;
+    setTimeout(function () {
+      watch.disconnect();
+      // Rechargement seulement si on est toujours sur cette adresse (l'utilisateur a pu repartir).
+      if (!reacted && location.href === expected) { leaving = true; location.reload(); }
+    }, 800);
+  }
+
+  // Vérifie l'URL actuelle. Renvoie true si on quitte (ou change) la page.
   function checkUrl() {
     if (leaving) return true;
     var a = urlAction(location.pathname, location.search);
     if (!a) return false;
     if (a.block) { blockPage(a.label); return true; }
-    leaving = true;
     if (!a.silent) post({ type: 'redirected', label: a.label });
-    location.replace(a.target);
+    softGo(a.target, true);
     return true;
   }
 
@@ -212,26 +233,32 @@ const RUNTIME = `
   }
 
   // --- 3. Masquage / réécriture en JS -----------------------------------------
-  function norm(s) { return (s || '').replace(/\\s+/g, ' ').trim().toLowerCase(); }
 
   function clean() {
     addStyle();
-    for (var i = 0; i < hide.length; i++) {
-      var r = hide[i], list;
-      try { list = document.querySelectorAll(r.selector); } catch (e) { continue; }
+    for (var i = 0; i < hideSels.length; i++) {
+      var rules = hideBySel[hideSels[i]], list;
+      try { list = document.querySelectorAll(hideSels[i]); } catch (e) { continue; }
       for (var j = 0; j < list.length; j++) {
-        var el = list[j];
-        if (r.text && norm(el.textContent) !== norm(r.text)) continue;
-        var target = (r.closest && el.closest(r.closest)) || el;
-        if (target.getAttribute('data-sans-reels') === 'hidden') continue;
-        target.style.setProperty('display', 'none', 'important');
-        target.setAttribute('data-sans-reels', 'hidden');
+        var el = list[j], txt = null;
+        for (var q = 0; q < rules.length; q++) {
+          var r = rules[q];
+          if (r.text) {
+            if (txt === null) txt = norm(el.textContent); // lu une seule fois par élément
+            if (txt !== r.text) continue;
+          }
+          var target = (r.closest && el.closest(r.closest)) || el;
+          if (target.getAttribute('data-sans-reels') === 'hidden') continue;
+          target.style.setProperty('display', 'none', 'important');
+          target.setAttribute('data-sans-reels', 'hidden');
+        }
       }
     }
     for (var k = 0; k < rewrite.length; k++) {
       var links;
       try { links = document.querySelectorAll(rewrite[k].selector); } catch (e) { continue; }
       for (var m = 0; m < links.length; m++) {
+        if (links[m].getAttribute('data-sans-reels-href') === rewrite[k].href) continue; // déjà fait
         links[m].setAttribute('href', rewrite[k].href);
         links[m].setAttribute('data-sans-reels-href', rewrite[k].href);
       }
@@ -259,8 +286,12 @@ const RUNTIME = `
   function run() {
     reportPath();
     reportUnread();
-    if (!checkUrl()) clean();
+    if (!checkUrl()) {
+      clean();
+      if (armVideos) armVideos();
+    }
   }
+  var armVideos = null; // défini plus bas si le blocage du glissement est actif
 
   // Regroupe les nombreux changements de la page en un seul nettoyage.
   var timer = null;
@@ -292,7 +323,7 @@ const RUNTIME = `
     e.stopImmediatePropagation();
     if (action.block) { post({ type: 'blocked', label: action.label }); return; }
     if (action.label && !action.silent) post({ type: 'redirected', label: action.label });
-    location.assign(action.target);
+    softGo(action.target, false);
   }, true);
 
   // c) Contenu ajouté dynamiquement (scroll infini, changement d'onglet…).
@@ -308,14 +339,14 @@ const RUNTIME = `
   // gestionnaires de geste). Les taps, le glissement horizontal et les
   // panneaux sans vidéo (commentaires…) restent utilisables.
   if (lockFeed) {
+    var isFull = function (v) {
+      var r = v.getBoundingClientRect(), W = window.innerWidth, H = window.innerHeight;
+      // Une vidéo du fil (format 4:5) fait ~60 % de la hauteur : elle n'est pas concernée.
+      return r.width >= W * 0.9 && r.height >= H * 0.75 && r.top < H * 0.5 && r.bottom > H * 0.5;
+    };
     var fullVideo = function () {
       var vids = document.getElementsByTagName('video');
-      var W = window.innerWidth, H = window.innerHeight;
-      for (var i = 0; i < vids.length; i++) {
-        var r = vids[i].getBoundingClientRect();
-        // Une vidéo du fil (format 4:5) fait ~60 % de la hauteur : elle n'est pas concernée.
-        if (r.width >= W * 0.9 && r.height >= H * 0.75 && r.top < H * 0.5 && r.bottom > H * 0.5) return vids[i];
-      }
+      for (var i = 0; i < vids.length; i++) if (isFull(vids[i])) return vids[i];
       return null;
     };
     var scrollableParent = function (el) {
@@ -354,21 +385,41 @@ const RUNTIME = `
       // En horizontal : rien n'est bloqué (carrousels…).
       if (gesture.vertical === false) return;
       if (e.cancelable && e.type === 'touchmove') e.preventDefault();
-      if (gesture.vertical) e.stopPropagation();
+      // stopImmediatePropagation : même un écouteur du site posé sur ce conteneur ne reçoit rien.
+      if (gesture.vertical) e.stopImmediatePropagation();
     };
-    var touchOpts = { capture: true, passive: false };
-    window.addEventListener('touchstart', function (e) {
+    var onStart = function (e) {
       if (e.touches.length !== 1) { gesture = null; return; }
       start(e.target, e.touches[0].clientX, e.touches[0].clientY);
-    }, touchOpts);
-    window.addEventListener('touchmove', function (e) {
+    };
+    var onMove = function (e) {
       if (e.touches.length !== 1) return;
       move(e, e.touches[0].clientX, e.touches[0].clientY);
-    }, touchOpts);
+    };
+    // Les écouteurs qui peuvent bloquer le défilement (passive: false) ne sont posés
+    // QUE sur le conteneur d'une vidéo plein écran, quand elle apparaît : partout
+    // ailleurs (fil, messages…), iOS fait défiler sans attendre le script.
+    var armed = [];
+    armVideos = function () {
+      var vids = document.getElementsByTagName('video');
+      for (var i = 0; i < vids.length; i++) {
+        if (!isFull(vids[i])) continue;
+        var box = scrollableParent(vids[i]) || vids[i].parentElement || vids[i];
+        if (armed.indexOf(box) >= 0) continue;
+        armed.push(box);
+        // capture : on passe avant les écouteurs du site (sur ce conteneur et à l'intérieur).
+        box.addEventListener('touchstart', onStart, { capture: true, passive: false });
+        box.addEventListener('touchmove', onMove, { capture: true, passive: false });
+      }
+      // Oublie les conteneurs retirés de la page.
+      armed = armed.filter(function (b) { return b.isConnected; });
+    };
+    // Les événements « pointer » ne retardent jamais le défilement : sans risque sur toute la page.
     window.addEventListener('pointermove', function (e) {
       if (e.pointerType === 'touch') move(e, e.clientX, e.clientY);
     }, true);
-    window.addEventListener('touchend', function () { gesture = null; }, true);
+    window.addEventListener('touchend', function () { gesture = null; }, { capture: true, passive: true });
+    window.addEventListener('touchcancel', function () { gesture = null; }, { capture: true, passive: true });
   }
 
   // d) Filet de sécurité si une navigation nous échappe.

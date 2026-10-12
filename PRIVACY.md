@@ -8,8 +8,7 @@
 - Le temps passé aujourd'hui sur chaque réseau (affiché sur l'accueil) est compté et gardé
   **uniquement sur ton téléphone**, puis remis à zéro chaque jour. Il n'est envoyé nulle part.
 - Elle ne lit ni tes messages, ni tes mots de passe, ni ton contenu. Le script qu'elle ajoute aux
-  pages masque des éléments, redirige des liens, empêche de glisser vers d'autres Reels et repère
-  le glissement depuis le bord de l'écran. Il lit aussi l'adresse de la page et le nombre de messages
+  pages masque des éléments, redirige des liens et empêche de glisser vers d'autres Reels. Il lit aussi l'adresse de la page et le nombre de messages
   non lus affiché dans son titre (« (3) Instagram ») ; ces informations restent sur ton téléphone.
   Il est lisible dans `src/lib/buildInjection.ts` et `src/rules/`.
 

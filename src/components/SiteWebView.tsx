@@ -8,7 +8,7 @@ import { findBannedSite } from '../lib/banned';
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
-import { INSIDE_HOSTS, SITE_TABS, tabIndexForPath, tabScript } from '../lib/sites';
+import { INSIDE_HOSTS } from '../lib/sites';
 import { useTheme } from '../lib/theme';
 import { saveUnread } from '../lib/unread';
 import { findUrlAction, hostMatches, parseUrl } from '../lib/urlRules';
@@ -31,15 +31,13 @@ type Props = {
   holdWelcome?: boolean;
   /** Le bandeau, pour que le tuto puisse le montrer. */
   toastRef?: RefObject<View | null>;
-  /** Commande donnée au parent : passer à l'onglet suivant (+1) ou précédent (-1) du site. */
-  controlsRef?: RefObject<{ goTab: (dir: 1 | -1) => void } | null>;
 };
 
 /**
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controlsRef }: Props) {
+export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -71,22 +69,6 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
     // Ne réagit qu'au début et à la fin du tuto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdWelcome]);
-
-  // Onglets du site : on retient le dernier choisi (le profil n'a pas d'adresse fixe).
-  const lastTab = useRef(0);
-  if (controlsRef) {
-    controlsRef.current = {
-      goTab(dir) {
-        const tabs = SITE_TABS[platform.id] ?? [];
-        const current = tabIndexForPath(tabs, path) ?? lastTab.current;
-        const next = current + dir;
-        if (next < 0 || next >= tabs.length) return;
-        lastTab.current = next;
-        webRef.current?.injectJavaScript(tabScript(tabs[next]));
-        showBanner(tabs[next].label);
-      },
-    };
-  }
 
   function showBanner(text: string) {
     toast.current?.show(text);
@@ -160,12 +142,6 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
           if (platform.id === 'instagram') syncAppBadge(count);
         }
         break;
-      case 'edgeSwipe':
-        if (onThisSite && (m.dir === 1 || m.dir === -1)) controlsRef?.current?.goTab(m.dir);
-        break;
-      case 'tabMissing':
-        showBanner('Onglet introuvable sur cette page');
-        break;
       case 'feedLocked':
         showBanner('Les vidéos suivantes sont bloquées');
         break;
@@ -202,7 +178,7 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
         // --- Confort -------------------------------------------------------
-        // Les bords de l'écran changent d'onglet (voir browser/[platform].tsx), pas de page.
+        // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
         // Tirer la page vers le bas = recharger.

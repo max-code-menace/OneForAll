@@ -425,32 +425,54 @@ async function browserTests() {
   assert.equal(await page.evaluate(() => window.__siteMoves), 8, 'story : le site reçoit le glissement');
   await page.close();
 
-  // --- Bords de l'écran : glisser vers l'intérieur = changer d'onglet ; un appui reste au site ---
-  page = await openViewer(() => false);
-  const edgeCdp = await page.context().newCDPSession(page);
-  async function drag(x1, x2, y = 300) {
-    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y }] });
-    for (let i = 1; i <= 6; i++) {
-      await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * i) / 6, y }] });
-    }
-    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(100);
+  // --- Fluidité : redirection SANS recharger la page quand le site a un routeur ---
+  // Fausse page avec un « routeur » qui réaffiche le contenu à chaque popstate (comme Instagram).
+  async function openSpa(withRouter) {
+    const p = await browser.newPage();
+    let loads = 0;
+    await p.route('**/*', (route) => {
+      loads++;
+      route.fulfill({ contentType: 'text/html', body: `<html><head></head><body>
+        <a id="exploreLink" href="/explore/">Explore</a><a id="homeLink" href="/">Accueil</a><div id="view"></div>
+        <script>
+          ${withRouter ? "window.addEventListener('popstate', () => { const d = document.createElement('div'); d.textContent = location.pathname; document.getElementById('view').appendChild(d); });" : ''}
+        </script></body></html>` });
+    });
+    await p.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await p.addInitScript(buildInjectedScript(PLATFORMS, defaults));
+    await p.goto('https://www.instagram.com/p/AAA/');
+    await p.waitForTimeout(250);
+    return { p, loads: () => loads };
   }
-  const edges = async () => (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'edgeSwipe').map((m) => m.dir);
-  await drag(372, 250); // depuis le bord droit (avant la barre de défilement de Chromium)
-  await drag(5, 150); // depuis le bord gauche
-  await drag(200, 60); // au milieu : rien
-  await drag(372, 360); // trop court : rien
-  assert.deepEqual(await edges(), [1, -1], 'glissements depuis les bords signalés');
+  let spa = await openSpa(true);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(1000);
+  assert.equal(pathOf(spa.p), '/explore/search/', 'Explore -> recherche');
+  assert.equal(spa.loads(), 1, 'Explore -> recherche sans recharger la page');
+  await spa.p.click('#homeLink');
+  await spa.p.waitForTimeout(1000);
+  assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
+  assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
+  await spa.p.close();
+  // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
+  spa = await openSpa(false);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(1500);
+  assert.equal(pathOf(spa.p), '/explore/search/', 'sans routeur : bonne adresse');
+  assert.equal(spa.loads(), 2, 'sans routeur : page rechargée une fois');
+  await spa.p.close();
+
+  // Défilement fluide : aucun écouteur qui bloque le défilement sur la page elle-même.
+  page = await openViewer(defaults);
   await page.evaluate(() => {
-    const b = document.createElement('button');
-    b.id = 'edgeBtn';
-    b.style.cssText = 'position:fixed;left:0;top:20px;width:30px;height:30px;z-index:9';
-    b.onclick = () => (window.__tapped = true);
-    document.body.appendChild(b);
+    document.body.insertAdjacentHTML('beforeend', '<div id="feed" style="position:fixed;left:0;top:0;width:100%;height:150px;overflow-y:scroll;z-index:5;background:#eee"><div style="height:2000px">fil</div></div>');
   });
-  await page.tap('#edgeBtn');
-  assert.equal(await page.evaluate(() => window.__tapped), true, 'un bouton au bord de l’écran répond');
+  await page.waitForTimeout(300);
+  await swipe(page, 200, 140, 20);
+  assert.ok((await scrollTop(page, '#feed')) > 0, 'le fil hors vidéo défile normalement');
   await page.close();
 
   // --- YouTube ---

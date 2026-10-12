@@ -117,6 +117,16 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   (souvent des heures de retard). Les cookies viennent de la WebView (`sharedCookiesEnabled` les recopie dans
   `NSHTTPCookieStorage`, utilisé par `fetch`). Nouveaux modules natifs : expo-background-fetch, expo-task-manager,
   expo-notifications (plugin `expo-background-fetch` dans app.json, pas de push donc pas de plugin notifications).
+- **Onglets au glissement gauche/droite RETIRÉS** (demande de l'utilisateur après le build 5 : chaque changement
+  d'onglet rechargeait tout le site). Plus aucun glissement gauche/droite dans un site (ni onglets, ni retour
+  arrière de WebKit : `allowsBackForwardNavigationGestures={false}`) ; seul « tirer vers le bas » recharge.
+  **Ne pas les remettre sans qu'il le demande.**
+- **Fluidité** (pas encore buildé, testé sur fausses pages Chromium) : redirections sans rechargement (`softGo` :
+  `pushState`/`replaceState` + événement `popstate` que le routeur du site écoute ; si rien n'est ajouté à la page
+  en 800 ms, rechargement à la bonne adresse). Explore → recherche et accueil → fil Abonnements ne rechargent donc
+  plus la page (supposé sur le vrai Instagram). Écouteurs de geste non passifs posés seulement sur le conteneur
+  d'une vidéo plein écran (avant : sur toute la page, iOS attendait le script à chaque défilement). Nettoyage :
+  chaque sélecteur cherché une fois.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
   - Sécurité des règles téléchargées : libellés/descriptions sans `< > &` et page bloquée construite sans HTML ;
@@ -125,16 +135,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     (`isSafeTarget` dans urlRules.ts + `safeTarget` dans le script injecté). Nouveau champ de règle `silent`
     (pas de bandeau ; ignoré sans risque par les anciennes versions) sur `ig.followingFeed`.
   - Messages page → app : écoutés seulement sur les domaines des réseaux, valeurs vérifiées.
-  - Bords : le glissement est repéré DANS la page (message `edgeSwipe`), plus de zones posées sur la WebView
-    (elles avalaient les appuis des boutons du site au bord de l'écran).
   - Liens externes → Safari ; écran « Pas de connexion » en français avec « Réessayer » ; le script est figé à
     l'ouverture du site (plus de rechargement si des règles arrivent pendant qu'on est dessus).
   - Pastille Instagram **désactivée par défaut** (Réglages → Messages Instagram), PRIVACY.md et textes corrigés
     (l'app contactait Instagram à chaque accueil alors qu'elle disait « ne contacte personne »).
   - Notifications : vérifie que l'actualisation en arrière-plan est permise ; chiffre de l'icône mis à jour app
     ouverte. `expo-background-fetch` est déprécié par Expo : migration vers `expo-background-task` NON faite.
-  - Profil Instagram : la plus petite photo de profil la plus basse (barre du bas), pas celles des stories.
-    YouTube : « Bibliothèque » → « Vous » (`/feed/you`). Stories exclues du blocage de glissement ; le
+  - Stories exclues du blocage de glissement ; le
     glissement horizontal sur une vidéo n'est plus bloqué.
   - Accessibilité : cartes de l'accueil lues en entier, interrupteurs lus une fois, bandeau annoncé par VoiceOver,
     pages de présentation qui défilent en très grand texte.
@@ -144,9 +151,10 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 
 ## À faire (par ordre)
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
-   Puis build 5 avec les corrections de l'audit, et vérifier sur iPhone : boutons au bord de l'écran, glisser
-   depuis les bords, connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
-1. Retours de test du build 4 (utilisateur et sa sœur) : tuto, onglets au glissement (dont Profil Instagram),
+   Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité) ;
+   vérifier sur iPhone : défilement fluide, Explore et accueil sans rechargement, connexion YouTube (Google) et
+   Facebook toujours dans l'app, liens externes dans Safari.
+1. Retours de test du build 5 (utilisateur et sa sœur) : tuto,
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).
 2. Finir l'invitation TestFlight de la sœur (lien public après la revue bêta) ; si Apple refuse à cause des icônes

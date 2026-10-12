@@ -1,5 +1,4 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -23,24 +22,6 @@ const TOUR: TourStep[] = [
     r: 999,
   },
   {
-    target: 'edge-right',
-    title: 'Onglet suivant',
-    text: 'Glisse ton doigt de droite à gauche pour découvrir l’onglet suivant sans quitter la page.',
-    fx: 0.5,
-    fy: 0.5,
-    r: 14,
-    go: [-150, 0],
-  },
-  {
-    target: 'edge-left',
-    title: 'Onglet précédent',
-    text: 'Glisse ton doigt de gauche à droite pour revenir à l’onglet précédent sans quitter la page.',
-    fx: 0.5,
-    fy: 0.5,
-    r: 14,
-    go: [150, 0],
-  },
-  {
     target: 'home-btn',
     title: 'Revenir à OneForAll',
     text: 'Touche le symbole pour retrouver l’accueil de OneForAll.',
@@ -53,8 +34,6 @@ const TOUR: TourStep[] = [
 
 /**
  * Écran qui affiche un réseau social, en plein écran (pas de barre) :
- * - glisser depuis le bord droit = onglet suivant du réseau, depuis le bord gauche = onglet précédent
- *   (repéré dans la page, qui envoie « edgeSwipe » à SiteWebView) ;
  * - le bouton rond (le symbole) = retour à OneForAll ;
  * - tirer la page vers le bas = recharger.
  */
@@ -65,7 +44,6 @@ export default function BrowserScreen() {
   const { platforms, ready } = useRules();
   const platform = platforms.find((p) => p.id === platformId);
   const { loaded } = useSettings();
-  const controls = useRef<{ goTab: (dir: 1 | -1) => void } | null>(null);
   useUsageTimer(platformId);
 
   const showing = !!platform && loaded && ready;
@@ -85,17 +63,12 @@ export default function BrowserScreen() {
           welcome={SITE_TEXT[platform.id]?.toast}
           holdWelcome={tour.running}
           toastRef={tour.target('toast')}
-          controlsRef={controls}
         />
       ) : (
         <View style={{ flex: 1 }} />
       )}
 
-      {/* Repères du tuto : zones des gestes (le glissement depuis un bord est repéré
-          dans la page elle-même, voir buildInjection.ts : les boutons du site au bord
-          de l'écran restent utilisables). */}
-      <TourMarker markerRef={tour.target('edge-left')} style={{ left: 0, top: '38%', width: 26, height: 150 }} />
-      <TourMarker markerRef={tour.target('edge-right')} style={{ right: 0, top: '38%', width: 26, height: 150 }} />
+      {/* Repères du tuto : zones des gestes. */}
       <TourMarker markerRef={tour.target('pull')} style={{ left: 16, right: 16, top: insets.top + 8, height: 120 }} />
 
       <Pressable
