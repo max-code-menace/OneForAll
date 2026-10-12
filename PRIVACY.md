@@ -10,7 +10,7 @@
   et `src/rules/`.
 
 ## La seule connexion que fait l'app elle-même : les règles
-Quand tu ouvres l'app, elle télécharge 3 petits fichiers publics (`src/rules/*.json` de ce dépôt,
+Quand tu ouvres l'app, elle télécharge 2 petits fichiers publics (`src/rules/*.json` de ce dépôt,
 sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des règles.
 
 - **Aucune donnée n'est envoyée** : c'est une simple requête de téléchargement, sans identifiant,

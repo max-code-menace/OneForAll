@@ -173,7 +173,16 @@ const RUNTIME = `
     }
   }
 
+  // Prévient l'app du chemin de la page (affiché seulement en mode diagnostic).
+  var lastPath = '';
+  function reportPath() {
+    if (location.pathname === lastPath) return;
+    lastPath = location.pathname;
+    post({ type: 'path', path: location.pathname });
+  }
+
   function run() {
+    reportPath();
     if (!checkUrl()) clean();
   }
 

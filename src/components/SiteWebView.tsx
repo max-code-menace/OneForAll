@@ -3,10 +3,11 @@ import { StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
+import { findBannedSite } from '../lib/banned';
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
-import { findUrlAction } from '../lib/urlRules';
+import { findUrlAction, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
 
 type Props = {
@@ -23,10 +24,12 @@ type Props = {
  */
 export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props) {
   const webRef = useRef<WebView>(null);
-  const { isEnabled } = useSettings();
+  const { isEnabled, diagnostic } = useSettings();
   const { platforms } = useRules();
   const [banner, setBanner] = useState<string | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Chemin de la page affichée (mode diagnostic uniquement). */
+  const [path, setPath] = useState('');
 
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
   const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
@@ -46,6 +49,13 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
 
   /** Appelé AVANT chaque chargement de page : on bloque/redirige si besoin. */
   function onShouldStartLoadWithRequest(req: ShouldStartLoadRequest): boolean {
+    // Sites bannis (TikTok) : jamais ouverts, quel que soit le lien cliqué.
+    const banned = findBannedSite(req.url);
+    if (banned) {
+      if (req.isTopFrame !== false) showBanner(`🚫 ${banned} est banni`);
+      return false;
+    }
+
     const action = findUrlAction(platforms, req.url, isEnabled);
     if (!action) return true;
 
@@ -67,6 +77,7 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
       const msg = JSON.parse(e.nativeEvent.data);
       if (msg.type === 'blocked') showBanner(`🚫 ${msg.label ?? 'Bloqué'}`);
       if (msg.type === 'redirected' && msg.label) showBanner(`↪︎ ${msg.label}`);
+      if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
     } catch {
       // message qui ne vient pas de nous : on l'ignore
     }
@@ -74,6 +85,8 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
 
   function onNavigationStateChange(nav: WebViewNavigation) {
     onCanGoBackChange?.(nav.canGoBack);
+    const u = parseUrl(nav.url);
+    if (u) setPath(u.path);
   }
 
   return (
@@ -105,6 +118,13 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
       />
+      {diagnostic && (
+        <View pointerEvents="none" style={styles.diagnostic}>
+          <Text style={styles.diagnosticText} numberOfLines={2}>
+            Page : {path || '…'}
+          </Text>
+        </View>
+      )}
       {banner && (
         <View pointerEvents="none" style={styles.banner}>
           <Text style={styles.bannerText}>{banner}</Text>
@@ -127,4 +147,15 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
   },
   bannerText: { color: '#fff', fontSize: 14 },
+  diagnostic: {
+    position: 'absolute',
+    top: 8,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: '92%',
+  },
+  diagnosticText: { color: '#9f9', fontSize: 12, fontFamily: 'Menlo' },
 });

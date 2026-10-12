@@ -64,7 +64,7 @@ export type Rule = {
 };
 
 export type Platform = {
-  id: 'instagram' | 'youtube' | 'tiktok';
+  id: 'instagram' | 'youtube';
   name: string;
   /** Page ouverte quand on appuie sur le bouton. */
   startUrl: string;
@@ -77,10 +77,5 @@ export type Platform = {
    * depuis une WebView « reconnue », on se présente donc comme Safari iOS.
    */
   userAgent?: string;
-  /**
-   * Si cette règle est activée, la plateforme entière est bloquée :
-   * on affiche l'écran « bloqué » au lieu d'ouvrir la WebView.
-   */
-  blockAllRuleId?: string;
   rules: Rule[];
 };

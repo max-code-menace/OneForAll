@@ -4,7 +4,8 @@
 
 OneForAll est une app iPhone gratuite et open source. Elle ouvre Instagram et YouTube et en
 retire les **Reels, les Shorts et Explore**. Tu gardes ce qui compte : tes messages, les
-profils, la recherche et la publication. **TikTok est bloqué**, car il ne contient que de la vidéo courte.
+profils, la recherche et la publication. **TikTok est banni** : il ne contient que de la vidéo courte à
+défilement infini, donc l'app refuse d'ouvrir ses liens, d'où qu'ils viennent.
 
 > Un pour tous : un outil gratuit, que chacun peut vérifier, utiliser et améliorer.
 
@@ -26,6 +27,7 @@ profils, la recherche et la publication. **TikTok est bloqué**, car il ne conti
 | ✅ | Masque les Reels, les Shorts, Explore. Redirige `/reels/` et `/shorts/…`. |
 | ✅ | Garde DMs, profils, recherche, publication. |
 | ✅ | Chaque règle s'active ou se désactive dans **Réglages**. |
+| ✅ | Bloque les liens TikTok (interdiction codée dans l'app, qu'une mise à jour de règles ne peut pas lever). |
 | ⚠️ | **N'est pas affiliée** à Instagram (Meta), YouTube (Google) ni TikTok. |
 | ⚠️ | Elle affiche leurs sites web en modifiant l'affichage. Cela peut ne pas respecter leurs conditions d'utilisation. Nous n'avons connaissance d'aucune sanction pour cet usage, mais nous ne pouvons pas le garantir. |
 | ⚠️ | Quand un site change son HTML, une règle peut cesser de fonctionner jusqu'à sa mise à jour. |

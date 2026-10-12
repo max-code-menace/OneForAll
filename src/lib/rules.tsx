@@ -17,7 +17,7 @@ import { DEFAULT_PLATFORMS, mergeRemoteRules, type Platform, type Rule } from '.
  * version plus récente téléchargée depuis GitHub.
  *
  * Ce que fait (et ne fait pas) la mise à jour automatique :
- *  - elle télécharge 3 petits fichiers JSON publics (src/rules/*.json du dépôt) ;
+ *  - elle télécharge 2 petits fichiers JSON publics (src/rules/*.json du dépôt) ;
  *  - elle n'envoie AUCUNE donnée te concernant (juste une requête web classique,
  *    donc GitHub voit ton adresse IP, comme pour n'importe quelle page) ;
  *  - chaque fichier est vérifié strictement (src/rules/validate.ts) : s'il est

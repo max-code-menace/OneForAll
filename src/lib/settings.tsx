@@ -10,6 +10,7 @@ import { useRules } from './rules';
  */
 
 const STORAGE_KEY = 'sans-reels:settings:v1';
+const DIAGNOSTIC_KEY = 'oneforall:diagnostic:v1';
 
 type Overrides = Record<string, boolean>;
 
@@ -18,6 +19,9 @@ type SettingsContextValue = {
   isEnabled: (ruleId: string) => boolean;
   setEnabled: (ruleId: string, value: boolean) => void;
   resetAll: () => void;
+  /** Affiche l'adresse de la page en bas du navigateur (aide au dépannage). */
+  diagnostic: boolean;
+  setDiagnostic: (value: boolean) => void;
 };
 
 const SettingsContext = createContext<SettingsContextValue | null>(null);
@@ -26,9 +30,13 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const { allRules } = useRules();
   const [overrides, setOverrides] = useState<Overrides>({});
   const [loaded, setLoaded] = useState(false);
+  const [diagnostic, setDiagnosticState] = useState(false);
 
   // Chargement au démarrage.
   useEffect(() => {
+    AsyncStorage.getItem(DIAGNOSTIC_KEY)
+      .then((v) => setDiagnosticState(v === 'true'))
+      .catch(() => {});
     AsyncStorage.getItem(STORAGE_KEY)
       .then((raw) => {
         if (raw) setOverrides(JSON.parse(raw));
@@ -57,9 +65,14 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   const resetAll = useCallback(() => save({}), [save]);
 
+  const setDiagnostic = useCallback((value: boolean) => {
+    setDiagnosticState(value);
+    AsyncStorage.setItem(DIAGNOSTIC_KEY, String(value)).catch(() => {});
+  }, []);
+
   const value = useMemo(
-    () => ({ loaded, isEnabled, setEnabled, resetAll }),
-    [loaded, isEnabled, setEnabled, resetAll],
+    () => ({ loaded, isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic }),
+    [loaded, isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

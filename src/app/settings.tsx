@@ -5,7 +5,7 @@ import { useSettings } from '../lib/settings';
 
 /** Réglages : un interrupteur par règle, groupés par plateforme. */
 export default function SettingsScreen() {
-  const { isEnabled, setEnabled, resetAll } = useSettings();
+  const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic } = useSettings();
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
 
   return (
@@ -49,6 +49,22 @@ export default function SettingsScreen() {
               </View>
             </Pressable>
           )}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: '#555' }]}>Diagnostic</Text>
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={styles.label}>Afficher l'adresse de la page</Text>
+              <Text style={styles.description}>
+                Affiche en haut du site le chemin de la page (sans les paramètres), par exemple
+                /reel/…. Utile pour signaler une règle qui ne marche pas. Rien n'est envoyé.
+              </Text>
+            </View>
+            <Switch value={diagnostic} onValueChange={setDiagnostic} />
+          </View>
         </View>
       </View>
 
