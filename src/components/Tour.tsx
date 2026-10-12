@@ -43,6 +43,11 @@ async function readSeen(): Promise<Record<string, boolean>> {
   }
 }
 
+/** « Revoir la présentation » : le tuto de chaque écran s'affichera de nouveau. */
+export async function resetTours(): Promise<void> {
+  await AsyncStorage.removeItem(SEEN_KEY).catch(() => {});
+}
+
 /**
  * `ready` : l'écran est prêt (rien d'autre par-dessus). Les éléments visés se
  * déclarent avec `target('nom')` (à poser en `ref` sur une View).

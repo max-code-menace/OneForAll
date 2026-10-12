@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useTour, type TourStep } from '../components/Tour';
+import { resetTours, useTour, type TourStep } from '../components/Tour';
 import { BackButton, Card, LinkRow, SectionTitle, Separator, SwitchRow } from '../components/ui';
 import { isNotificationsEnabled, setNotificationsEnabled } from '../lib/backgroundCheck';
 import { useIntro } from '../lib/intro';
@@ -52,7 +52,9 @@ export default function SettingsScreen() {
     }
   }
 
-  function replayOnboarding() {
+  async function replayOnboarding() {
+    // La présentation, puis le petit tuto de chaque écran, comme au premier lancement.
+    await resetTours();
     if (router.canDismiss()) router.dismissAll();
     showOnboarding();
   }

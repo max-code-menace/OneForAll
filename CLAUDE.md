@@ -86,6 +86,7 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   OneForAll (geste de retour iOS coupé sur cet écran) ; tirer vers le bas = recharger. **Petit tuto** la 1re fois
   sur l'accueil, un site et les Réglages (`src/components/Tour.tsx`, `oneforall:tour-seen:v1`), il remplace l'astuce
   « glisser ». Onglet Profil d'Instagram trouvé par la photo de profil (alt « profil »/« profile ») : non vérifié.
+  Réglages → « Revoir la présentation » remet aussi le tuto à zéro (`resetTours`) : fait après le build 4, à builder.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
 - Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
   (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,
