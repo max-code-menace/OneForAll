@@ -37,6 +37,13 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "3931002b-8bf3-4911-9417-345498cfd9b6"
+      }
+    },
+    "owner": "max-code-menace"
   }
 }
