@@ -47,6 +47,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 - Un premier build « production » a été envoyé à TestFlight, avec l'utilisateur comme testeur interne (aucune revue Apple).
 - Dans App Store Connect, le nom de la fiche est provisoire (« OneForAll » était pris). Le nom sous l'icône reste « OneForAll ».
 - **Build 3** (design, Facebook, TikTok banni, diagnostic) livré sur TestFlight et installé par l'utilisateur.
+- **Build 4** fabriqué (PR 2 et 3 fusionnées : plein écran, onglets au glissement, tuto, Reels en DM bloqués, fil
+  Abonnements, pubs, temps du jour, pastille et notifications, icônes, TikTok retiré de l'interface, user-agent
+  Facebook). Envoi à TestFlight à confirmer avec l'utilisateur ; pas encore testé sur iPhone.
+- Invitation de la sœur en cours : groupe de test **externe** + **lien public** TestFlight (revue bêta Apple
+  demandée ; textes de « Test Information » fournis). Prochaine étape : activer le lien public et l'envoyer.
+- Branche `claude/beautiful-mayer-mvofmc` : 1 commit non fusionné (« Revoir la présentation » relance le tuto),
+  à regrouper avec les corrections issues des tests du build 4 dans une prochaine PR.
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
@@ -106,10 +113,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
-1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
-2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
-3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook,
-   pastille et notifications). La PR 2 est fusionnée ; les notifications sont dans une PR suivante.
+1. Retours de test du build 4 (utilisateur et sa sœur) : tuto, onglets au glissement (dont Profil Instagram),
+   Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
+   connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).
+2. Finir l'invitation TestFlight de la sœur (lien public après la revue bêta) ; si Apple refuse à cause des icônes
+   ressemblant aux logos, les remplacer.
+3. Comparer notre accueil Instagram à celui de SocialLite (« plus centré ») : capture demandée.
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub
