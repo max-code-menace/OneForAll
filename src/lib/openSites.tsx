@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 
 import type { Platform } from '../rules';
@@ -10,6 +11,18 @@ import type { Platform } from '../rules';
 
 type SiteId = Platform['id'];
 
+/** Dernier réseau ouvert (gardé sur le téléphone) : c'est lui qu'on prépare au lancement. */
+const LAST_KEY = 'oneforall:last-site:v1';
+
+export async function readLastSite(): Promise<SiteId | null> {
+  try {
+    const v = await AsyncStorage.getItem(LAST_KEY);
+    return v === 'instagram' || v === 'youtube' || v === 'facebook' ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 type OpenSitesValue = {
   /** Réseaux dont la page existe (affichée ou cachée), dans l'ordre d'ouverture. */
   opened: SiteId[];
@@ -19,6 +32,8 @@ type OpenSitesValue = {
   open: (id: SiteId) => void;
   /** Revient à l'accueil ; le réseau reste en vie, caché. */
   close: () => void;
+  /** Charge un réseau en arrière-plan, sans l'afficher (préparation au lancement). */
+  preload: (id: SiteId) => void;
 };
 
 const OpenSitesContext = createContext<OpenSitesValue | null>(null);
@@ -30,10 +45,14 @@ export function OpenSitesProvider({ children }: { children: ReactNode }) {
   const open = useCallback((id: SiteId) => {
     setOpened((list) => (list.includes(id) ? list : [...list, id]));
     setActive(id);
+    AsyncStorage.setItem(LAST_KEY, id).catch(() => {});
   }, []);
   const close = useCallback(() => setActive(null), []);
+  const preload = useCallback((id: SiteId) => {
+    setOpened((list) => (list.includes(id) ? list : [...list, id]));
+  }, []);
 
-  const value = useMemo(() => ({ opened, active, open, close }), [opened, active, open, close]);
+  const value = useMemo(() => ({ opened, active, open, close, preload }), [opened, active, open, close, preload]);
   return <OpenSitesContext.Provider value={value}>{children}</OpenSitesContext.Provider>;
 }
 

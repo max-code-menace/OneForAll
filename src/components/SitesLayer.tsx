@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, BackHandler, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useOpenSites } from '../lib/openSites';
+import { useIntro } from '../lib/intro';
+import { readLastSite, useOpenSites } from '../lib/openSites';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { SITE_TEXT } from '../lib/sites';
@@ -42,9 +43,10 @@ const TOUR: TourStep[] = [
 export function SitesLayer() {
   const { width } = useWindowDimensions();
   const reduce = useReduceMotion();
-  const { opened, active, close } = useOpenSites();
-  const { platforms, ready } = useRules();
-  const { loaded } = useSettings();
+  const { opened, active, close, preload } = useOpenSites();
+  const { platforms, ready, status } = useRules();
+  const { loaded, preload: preloadOn } = useSettings();
+  const { splashDone } = useIntro();
   /** Réseau dessiné par-dessus l'accueil (reste affiché pendant qu'il glisse pour partir). */
   const [onTop, setOnTop] = useState<Platform['id'] | null>(null);
   const slide = useRef(new Animated.Value(width)).current;
@@ -62,6 +64,25 @@ export function SitesLayer() {
     // Ne réagit qu'au réseau demandé.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Au lancement : le dernier réseau utilisé se charge en arrière-plan (Réglages →
+  // « Préparer au lancement »), une fois l'animation finie et les règles à jour (au plus
+  // 3 s d'attente), pour ne pas devoir le recharger aussitôt avec des règles plus récentes.
+  const preloadStarted = useRef(false);
+  useEffect(() => {
+    if (preloadStarted.current || !loaded || !ready || !splashDone || !preloadOn) return;
+    const go = () => {
+      if (preloadStarted.current) return;
+      preloadStarted.current = true;
+      readLastSite().then((id) => id && preload(id));
+    };
+    if (status.state !== 'checking') {
+      go();
+      return;
+    }
+    const timer = setTimeout(go, 3000);
+    return () => clearTimeout(timer);
+  }, [loaded, ready, splashDone, preloadOn, status.state, preload]);
 
   // Android : le bouton retour ramène à l'accueil (le réseau reste ouvert).
   useEffect(() => {
