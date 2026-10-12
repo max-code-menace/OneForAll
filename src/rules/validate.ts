@@ -18,7 +18,7 @@ import type { HideRule, Platform, RewriteLinkRule, Rule, UrlRule } from './types
 /** À incrémenter si le format change de façon incompatible. */
 export const SCHEMA_VERSION = 1;
 
-const PLATFORM_IDS = ['instagram', 'youtube'] as const;
+const PLATFORM_IDS = ['instagram', 'youtube', 'facebook'] as const;
 const MAX_CSS = 20_000;
 const MAX_RULES = 60;
 

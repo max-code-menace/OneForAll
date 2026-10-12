@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "id": "facebook",
+  "name": "Facebook",
+  "startUrl": "https://m.facebook.com/",
+  "hosts": [
+    "facebook.com"
+  ],
+  "color": "#1877F2",
+  "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  "rules": [
+    {
+      "id": "fb.videoTab",
+      "label": "Masquer l'onglet Vidéo",
+      "description": "Retire l’onglet Vidéo (Reels et vidéos suggérées) de la barre de navigation.",
+      "defaultEnabled": true,
+      "css": [
+        "/* Onglet Vidéo de la barre du haut (pas les liens vers une vidéo précise, /watch/?v=…). */",
+        "a[href=\"/watch/\"],",
+        "a[href^=\"/watch/?ref=\"],",
+        "a[href=\"/reel/\"],",
+        "a[href=\"/reels/\"] { display: none !important; }"
+      ]
+    },
+    {
+      "id": "fb.reelRedirect",
+      "label": "Rediriger /reel/ vers le fil",
+      "description": "Si tu tombes sur un Reel, retour au fil d’actualité.",
+      "defaultEnabled": true,
+      "urls": [
+        {
+          "pattern": "^/reels?(?:/.*)?$",
+          "redirectTo": "/"
+        }
+      ]
+    },
+    {
+      "id": "fb.feedReels",
+      "label": "Masquer les Reels dans le fil",
+      "description": "Retire les blocs Reels et les vidéos courtes du fil.",
+      "defaultEnabled": true,
+      "hide": [
+        {
+          "selector": "article a[href*=\"/reel/\"]",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Reels and short videos",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Reels et vidéos courtes",
+          "closest": "article"
+        }
+      ]
+    },
+    {
+      "id": "fb.suggestedVideos",
+      "label": "Masquer les vidéos suggérées",
+      "description": "Retire les blocs « Vidéos suggérées » du fil.",
+      "defaultEnabled": true,
+      "hide": [
+        {
+          "selector": "article span",
+          "text": "Suggested videos",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Vidéos suggérées",
+          "closest": "article"
+        }
+      ]
+    },
+    {
+      "id": "fb.suggestedPosts",
+      "label": "Masquer les publications suggérées",
+      "description": "Retire les blocs « Suggestions pour vous » (désactivé par défaut).",
+      "defaultEnabled": false,
+      "hide": [
+        {
+          "selector": "article span",
+          "text": "Suggested for you",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Suggestions pour vous",
+          "closest": "article"
+        }
+      ]
+    }
+  ]
+}

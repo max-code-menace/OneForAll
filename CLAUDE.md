@@ -4,14 +4,14 @@ Ce fichier est lu au début de chaque session. Il résume où en est le projet.
 **Si quelque chose ici contredit le code, c'est le code qui a raison : vérifie avant d'affirmer.**
 
 ## Le projet
-App iPhone **gratuite et open source** (Expo / React Native / TypeScript). Elle ouvre Instagram et
-YouTube dans une WebView et masque Reels, Shorts et Explore, en gardant DMs, profils, recherche et
+App iPhone **gratuite et open source** (Expo / React Native / TypeScript). Elle ouvre Instagram,
+YouTube et Facebook dans une WebView et masque Reels, Shorts et Explore, en gardant DMs, profils, recherche et
 publication. TikTok est **banni** (liens bloqués). Valeurs : gratuité, confiance, honnêteté, aucune
 collecte de données, dons libres (jamais dans l'app). Objectif : d'abord l'utilisateur, puis sa sœur et
 ses amis (via TestFlight), puis tout le monde.
 
 ## Architecture
-- `src/rules/instagram.json`, `youtube.json` : règles (sélecteurs CSS, redirections d'URL). **Source unique.**
+- `src/rules/instagram.json`, `youtube.json`, `facebook.json` : règles (sélecteurs CSS, redirections d'URL). **Source unique.**
   L'app les télécharge au lancement depuis `raw.githubusercontent.com/max-code-menace/OneForAll/main/src/rules/`.
 - `src/rules/validate.ts` : validation stricte (pas de code, pas de `url()` dans le CSS, redirections
   limitées au même site). Un fichier distant ne peut changer que `rules`, jamais l'adresse ni les domaines.
@@ -20,7 +20,14 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
 - `src/components/SiteWebView.tsx` : la WebView (iOS). `SiteWebView.web.tsx` : simple message pour le web.
-- `src/app/` : écrans (accueil, navigateur, réglages), Expo Router.
+- `src/app/` : écrans (accueil, navigateur, TikTok bloqué `blocked`, réglages, à propos), Expo Router,
+  sans en-tête natif (chaque écran dessine le sien).
+- Design : `design/OneForAll_Prototype.html` (export de Claude Design, s'ouvre dans un navigateur).
+  Reproduit dans `src/lib/theme.ts` (couleurs claires/sombres, courbes), `src/components/ui.tsx`,
+  `Mark.tsx` (symbole), `Intro.tsx` (lancement animé + présentation 3 pages, `src/lib/intro.tsx`),
+  `Toast.tsx` (bandeau « Reels masqués »). Icône : `assets/icon.png` (générée depuis le symbole).
+  Écarts voulus : pas de logos de marques (une lettre à la place), TikTok non débloquable (pas
+  d'interrupteur), section Diagnostic gardée dans les Réglages.
 - Docs publiques : `README.md`, `PRIVACY.md`, `CONTRIBUTING.md`. Licence **MPL-2.0**.
 
 ## Vérifier
@@ -37,7 +44,10 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   (définitif chez Apple).
 - Un premier build « production » a été envoyé à TestFlight, avec l'utilisateur comme testeur interne (aucune revue Apple).
 - Dans App Store Connect, le nom de la fiche est provisoire (« OneForAll » était pris). Le nom sous l'icône reste « OneForAll ».
-- Un **nouveau build** est nécessaire pour livrer : le bannissement TikTok et le mode diagnostic (code natif, pas des règles).
+- Un **nouveau build** est nécessaire pour livrer : le bannissement TikTok, le mode diagnostic, le nouveau design
+  et Facebook (code natif, pas des règles). Ces changements sont sur la branche `claude/beautiful-mayer-mvofmc` :
+  il faut les **fusionner dans `main`** avant le build (sinon `git pull` sur `main` ne les ramène pas, et
+  `facebook.json` absent de `main` fait afficher « Vérification impossible » dans les Réglages).
   Commandes que l'utilisateur lance **lui-même sous Windows (PowerShell), dans le dossier OneForAll** :
   ```
   git pull --no-rebase --no-edit
@@ -52,14 +62,15 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   adresse n'a pas déclenché ; hypothèse non vérifiée : Instagram l'ouvre dans une fenêtre sans changer l'adresse.
   Il faut le **chemin affiché par le mode diagnostic** (Réglages → Diagnostic) sur la nouvelle version.
   L'utilisateur doit choisir : **A** voir le Reel envoyé mais pas les suivants, ou **B** aucun Reel du tout.
+- **Facebook** (ajouté à la demande de l'utilisateur) : règles écrites sans aucun test sur le vrai site
+  (`m.facebook.com`). À vérifier sur iPhone. La connexion Facebook dans une WebView peut aussi poser problème.
+- **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
 1. L'utilisateur lance le nouveau build, active le diagnostic, envoie une capture du Reel ouvert → corriger la règle.
-2. **Appliquer le design** de Claude Design (projet « OneForAll Prototype », fichiers `.dc.html`, `image-slot.js`,
-   `support.js`). Claude n'a pas pu le lire (autorisation `/design-login` impossible en session). Il faut que l'utilisateur
-   envoie les fichiers (bouton « Send to Claude Code Web », ou dépôt dans un dossier `design/` du repo, ou captures).
-   Le HTML ne se réutilise pas tel quel : le reproduire en composants React Native, puis montrer des captures.
+2. Design appliqué + Facebook ajouté (branche `claude/beautiful-mayer-mvofmc`) : fusionner dans `main`, faire le build,
+   puis l'utilisateur vérifie sur iPhone (lancement, présentation, mode sombre, Facebook).
 3. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 4. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 5. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub

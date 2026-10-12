@@ -55,7 +55,13 @@ function urlTests() {
   assert.equal(t('https://example.com/reels/'), null);
   // Règle désactivée => plus de redirection.
   assert.equal(findUrlAction(PLATFORMS, 'https://www.instagram.com/reels/', () => false), null);
-  assert.deepEqual(PLATFORMS.map((p) => p.id), ['instagram', 'youtube']);
+  // Facebook : les Reels renvoient au fil ; une vidéo normale (/watch/?v=…) reste visible.
+  assert.equal(t('https://m.facebook.com/reel/123456/'), 'https://m.facebook.com/');
+  assert.equal(t('https://www.facebook.com/reels/'), 'https://www.facebook.com/');
+  assert.equal(t('https://m.facebook.com/watch/?v=123'), null);
+  assert.equal(t('https://m.facebook.com/reelsfan/'), null);
+  assert.equal(t('https://m.facebook.com/messages/'), null);
+  assert.deepEqual(PLATFORMS.map((p) => p.id), ['instagram', 'youtube', 'facebook']);
 
   // TikTok est banni, partout, y compris via les liens courts. Les noms qui y ressemblent ne le sont pas.
   const banned = (u) => findBannedSite(u);

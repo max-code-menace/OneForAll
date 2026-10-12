@@ -1,6 +1,6 @@
 # Contribuer à OneForAll
 
-Merci ! Le plus utile : **réparer une règle cassée**. Instagram et YouTube changent souvent leur HTML.
+Merci ! Le plus utile : **réparer une règle cassée**. Instagram, YouTube et Facebook changent souvent leur HTML.
 
 ## Corriger ou ajouter une règle
 
