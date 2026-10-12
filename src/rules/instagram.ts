@@ -1,0 +1,95 @@
+import type { Platform } from './types';
+
+/**
+ * Règles Instagram (version web mobile : https://www.instagram.com).
+ *
+ * ⚠️ Instagram change souvent son HTML. Les sélecteurs ci-dessous s'appuient
+ * surtout sur les liens (href), qui changent beaucoup moins que les classes CSS
+ * (celles d'Instagram sont générées automatiquement : "x1n2onr6"…).
+ * Si quelque chose réapparaît : ouvre Safari sur Mac/PC en mode mobile, inspecte
+ * l'élément et ajoute/modifie un sélecteur ici.
+ */
+export const instagram: Platform = {
+  id: 'instagram',
+  name: 'Instagram',
+  startUrl: 'https://www.instagram.com/',
+  hosts: ['instagram.com'],
+  color: '#C13584',
+  rules: [
+    {
+      id: 'ig.reelsTab',
+      label: "Masquer l'onglet Reels",
+      description: 'Retire le bouton Reels de la barre de navigation.',
+      defaultEnabled: true,
+      css: `
+        a[href="/reels/"],
+        a[href^="/reels/?"] { display: none !important; }
+      `,
+    },
+    {
+      id: 'ig.reelsRedirect',
+      label: 'Rediriger /reels/ vers l’accueil',
+      description: 'Si tu tombes sur la page Reels, retour au fil d’actualité.',
+      defaultEnabled: true,
+      urls: [{ pattern: '^/reels(?:/.*)?$', redirectTo: '/' }],
+    },
+    {
+      id: 'ig.reelLinks',
+      label: 'Bloquer les Reels ouverts depuis un lien',
+      description:
+        'Un Reel envoyé en DM ou partagé ne s’ouvre pas (retour à l’accueil). Désactive si tu veux voir les Reels de tes amis.',
+      defaultEnabled: true,
+      urls: [{ pattern: '^/(?:[^/]+/)?reels?/[^/]+/?$', redirectTo: '/' }],
+    },
+    {
+      id: 'ig.explore',
+      label: 'Masquer Explore (garder la recherche)',
+      description:
+        'Le bouton loupe mène directement à la recherche, sans la grille de contenus suggérés.',
+      defaultEnabled: true,
+      rewriteLinks: [{ selector: 'a[href="/explore/"]', href: '/explore/search/' }],
+      urls: [{ pattern: '^/explore/?$', redirectTo: '/explore/search/' }],
+      css: `
+        /* Grille Explore en dessous de la recherche (au cas où elle s'affiche). */
+        a[href^="/explore/"] ~ div [role="grid"] { display: none !important; }
+      `,
+    },
+    {
+      id: 'ig.feedReels',
+      label: 'Masquer les Reels dans le fil',
+      description: 'Retire les posts du fil qui sont des Reels.',
+      defaultEnabled: true,
+      hide: [
+        // Un post (article) qui contient un lien vers un Reel = un Reel.
+        { selector: 'article a[href*="/reel/"]', closest: 'article' },
+      ],
+    },
+    {
+      id: 'ig.profileReels',
+      label: 'Masquer les Reels sur les profils',
+      description: 'Retire l’onglet Reels des profils et les Reels de la grille.',
+      defaultEnabled: true,
+      css: `
+        /* Onglet "Reels" d'un profil : /<pseudo>/reels/ */
+        a[href$="/reels/"][role="tab"],
+        a[role="tab"][href*="/reels"] { display: none !important; }
+      `,
+      hide: [
+        // Vignettes de la grille d'un profil qui pointent vers un Reel.
+        { selector: 'main a[href*="/reel/"]:not(article a)' },
+      ],
+      // Si on ouvre quand même /<pseudo>/reels/ : retour sur le profil.
+      urls: [{ pattern: '^/([^/]+)/reels/?$', redirectTo: '/$1/' }],
+    },
+    {
+      id: 'ig.suggestedPosts',
+      label: 'Masquer les posts suggérés',
+      description: 'Retire les blocs « Suggestions pour vous » (désactivé par défaut).',
+      defaultEnabled: false,
+      hide: [
+        { selector: 'article span', text: 'Suggested for you', closest: 'article' },
+        { selector: 'article span', text: 'Suggestions pour vous', closest: 'article' },
+      ],
+    },
+  ],
+};
