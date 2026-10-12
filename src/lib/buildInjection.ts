@@ -92,6 +92,17 @@ const RUNTIME = `
   }
 
   // --- 1. URLs -------------------------------------------------------------
+  // Même logique que isAlreadyThere (src/lib/urlRules.ts) : pas de redirection en boucle.
+  function alreadyThere(path, search, target) {
+    var parts = target.split('?'), want = (parts[1] || '').split('&');
+    if (parts[0] !== path) return false;
+    var have = (search || '').replace(/^\\?/, '').split('&');
+    for (var i = 0; i < want.length; i++) {
+      if (want[i] && have.indexOf(want[i]) < 0) return false;
+    }
+    return true;
+  }
+
   // Renvoie { block: true } / { target: '/nouveau/chemin' } / null.
   function urlAction(path, search) {
     for (var i = 0; i < urls.length; i++) {
@@ -100,7 +111,7 @@ const RUNTIME = `
       if (!re.test(path)) continue;
       if (urls[i].redirectTo === null) return { block: true, label: urls[i].label };
       var target = path.replace(re, urls[i].redirectTo);
-      if (target === path) continue;
+      if (alreadyThere(path, search, target)) continue;
       if (target.indexOf('?') < 0) target += search || '';
       return { target: target, label: urls[i].label };
     }
@@ -253,7 +264,7 @@ const RUNTIME = `
       }
       return null;
     };
-    var gesture = null;
+    var gesture = null, lastNotice = 0;
     var start = function (target, x, y) {
       gesture = null;
       var v = fullVideo();
@@ -266,7 +277,14 @@ const RUNTIME = `
       if (!gesture) return;
       if (gesture.vertical === null) {
         var dx = Math.abs(x - gesture.x), dy = Math.abs(y - gesture.y);
-        if (dx > 6 || dy > 6) gesture.vertical = dy > dx;
+        if (dx > 6 || dy > 6) {
+          gesture.vertical = dy > dx;
+          // Prévient l'app (bandeau « Les Reels suivants sont bloqués »), sans répéter.
+          if (gesture.vertical && Date.now() - lastNotice > 4000) {
+            lastNotice = Date.now();
+            post({ type: 'feedLocked' });
+          }
+        }
       }
       // Toujours annuler le défilement natif (sinon il démarre avant qu'on ait tranché) ;
       // en vertical, le site ne reçoit pas non plus le geste.

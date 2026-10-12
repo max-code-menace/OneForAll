@@ -25,6 +25,18 @@ export function hostMatches(host: string, hosts: string[]): boolean {
   return hosts.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
+/**
+ * La cible est-elle déjà la page actuelle ? Ex. « / » → « /?variant=following » :
+ * une fois sur « /?variant=following », le chemin vaut encore « / », il ne faut
+ * pas rediriger en boucle. Vrai si même chemin et paramètres de la cible déjà présents.
+ */
+export function isAlreadyThere(path: string, search: string, target: string): boolean {
+  const [tPath, tQuery = ''] = target.split('?');
+  if (tPath !== path) return false;
+  const have = search.replace(/^\?/, '').split('&');
+  return tQuery.split('&').every((p) => p === '' || have.includes(p));
+}
+
 export function findUrlAction(
   platforms: Platform[],
   url: string,
@@ -42,7 +54,7 @@ export function findUrlAction(
         if (!re.test(u.path)) continue;
         if (r.redirectTo === null) return { type: 'block', rule, platform };
         let target = u.path.replace(re, r.redirectTo);
-        if (target === u.path) continue;
+        if (isAlreadyThere(u.path, u.search, target)) continue;
         // On garde les paramètres d'origine sauf si la cible en définit déjà.
         if (!target.includes('?')) target += u.search;
         return { type: 'redirect', url: u.origin + target, rule, platform };

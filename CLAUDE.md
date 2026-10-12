@@ -72,17 +72,27 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   dessus (défilement natif + gestionnaires du site) ; les panneaux sans vidéo (commentaires) restent libres.
   Testé seulement sur une fausse page (Chromium). Non testé sur le vrai Instagram.
 - **Facebook** (ajouté à la demande de l'utilisateur) : règles écrites sans aucun test sur le vrai site
-  (`m.facebook.com`). **Connexion bloquée** par une « vérification robot » que l'utilisateur n'arrive pas à valider
-  dans l'app : capture demandée.
+  (`m.facebook.com`). **Connexion bloquée** par une « vérification robot » à cases à cocher, alors que chez le
+  concurrent SocialLite un contrôle invisible passe tout seul. Hypothèse (non vérifiée) : notre user-agent Safari
+  était figé sur iOS 18, incohérent avec le vrai moteur. Corrigé (à builder) : `applicationNameForUserAgent` avec la
+  vraie version d'iOS (SiteWebView.tsx). Si ça ne suffit pas : regarder les fenêtres pop-up
+  (`javaScriptCanOpenWindowsAutomatically`, `onOpenWindow`).
 - Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre ; glisser
   depuis le bord gauche = retour à OneForAll ; tirer vers le bas = recharger ; astuce affichée à la 1re ouverture.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
+- Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
+  (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,
+  anti-boucle `isAlreadyThere`), pubs masquées (`ig.ads`, texte « Sponsorisé »…), suggestions masquées par défaut,
+  compteur de temps du jour sur l'accueil (`src/lib/usage.ts`, local), bouton rond flottant pour revenir, bandeau
+  « Les vidéos suivantes sont bloquées ». Refusé : blocage des vraies apps (autorisation Apple Screen Time),
+  notifications (serveur = collecte). L'utilisateur trouve leur Instagram « plus centré » : capture de notre
+  accueil Instagram demandée pour comparer.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
 1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
 2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
-3. Puis un build 4 avec tout ça (et la suppression de la barre du haut).
+3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook).
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
@@ -11,6 +11,14 @@ import { useTheme } from '../lib/theme';
 import { findUrlAction, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
 import { Toast, type ToastHandle } from './Toast';
+
+/**
+ * Se présenter comme Safari, avec la VRAIE version d'iOS du téléphone.
+ * WKWebView compose déjà le début (« Mozilla/5.0 (iPhone; CPU iPhone OS …) AppleWebKit/… ») ;
+ * on remplace seulement la fin (« Mobile/15E148 ») par celle de Safari. Une version écrite
+ * en dur (ancienne) ne correspond plus au moteur réel : c'est un signal de robot.
+ */
+const SAFARI_APP_NAME = `Version/${String(RNPlatform.Version).split('.').slice(0, 2).join('.')} Mobile/15E148 Safari/604.1`;
 
 type Props = {
   platform: Platform;
@@ -74,6 +82,7 @@ export function SiteWebView({ platform, welcome }: Props) {
       if (msg.type === 'blocked') showBanner(msg.label ?? 'Page bloquée');
       if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
       if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
+      if (msg.type === 'feedLocked') showBanner('Les vidéos suivantes sont bloquées');
     } catch {
       // message qui ne vient pas de nous : on l'ignore
     }
@@ -92,7 +101,8 @@ export function SiteWebView({ platform, welcome }: Props) {
         ref={webRef}
         style={styles.flex}
         source={{ uri: platform.startUrl }}
-        userAgent={platform.userAgent}
+        // Plateformes qui refusent les WebView (Google, Facebook) : on se présente comme Safari.
+        applicationNameForUserAgent={platform.userAgent ? SAFARI_APP_NAME : undefined}
         // --- Rester connecté -----------------------------------------------
         sharedCookiesEnabled
         thirdPartyCookiesEnabled

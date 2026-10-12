@@ -5,12 +5,14 @@
 ## Ce que fait l'app
 - Elle n'a **ni compte, ni serveur à elle, ni statistiques, ni publicité, ni outil de suivi**.
 - Tes réglages (quelles règles sont actives) sont enregistrés **uniquement sur ton téléphone**.
+- Le temps passé aujourd'hui sur chaque réseau (affiché sur l'accueil) est compté et gardé
+  **uniquement sur ton téléphone**, puis remis à zéro chaque jour. Il n'est envoyé nulle part.
 - Elle ne lit ni tes messages, ni tes mots de passe, ni ton contenu. Le script qu'elle ajoute aux
   pages ne fait que masquer des éléments et rediriger des liens. Il est lisible dans `src/lib/buildInjection.ts`
   et `src/rules/`.
 
 ## La seule connexion que fait l'app elle-même : les règles
-Quand tu ouvres l'app, elle télécharge 2 petits fichiers publics (`src/rules/*.json` de ce dépôt,
+Quand tu ouvres l'app, elle télécharge 3 petits fichiers publics (`src/rules/*.json` de ce dépôt,
 sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des règles.
 
 - **Aucune donnée n'est envoyée** : c'est une simple requête de téléchargement, sans identifiant,

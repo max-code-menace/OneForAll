@@ -46,6 +46,9 @@ function urlTests() {
   assert.equal(t('https://www.instagram.com/explore/'), 'https://www.instagram.com/explore/search/');
   assert.equal(t('https://www.instagram.com/martin/reels/'), 'https://www.instagram.com/martin/');
   assert.equal(t('https://www.instagram.com/martin/'), null);
+  assert.equal(t('https://www.instagram.com/'), 'https://www.instagram.com/?variant=following');
+  assert.equal(t('https://www.instagram.com/?variant=following'), null); // pas de boucle
+  assert.equal(t('https://www.instagram.com/?hl=fr&variant=following'), null);
   assert.equal(t('https://www.instagram.com/reelsfan/'), null); // pseudo qui commence par "reels"
   assert.equal(t('https://www.instagram.com/direct/inbox/'), null);
   assert.equal(t('https://www.instagram.com/p/ABC/'), null);
@@ -95,7 +98,7 @@ function validationTests() {
 
   // Les fichiers du dépôt sont valides, et css en liste de lignes est bien rassemblé.
   for (const p of PLATFORMS) mergeRemoteRules(p, rawOf(p.id));
-  assert.match(base('instagram').rules[0].css, /display: none !important;/);
+  assert.match(base('instagram').rules.find((x) => x.id === 'ig.reelsTab').css, /display: none !important;/);
 
   const bad = (label, id, mutate) => {
     const raw = clone(rawOf(id));
@@ -104,9 +107,9 @@ function validationTests() {
   };
   bad('CSS avec url()', 'instagram', (r) => (r.rules[0].css = ['a { background: url(https://evil.example/x) }']));
   bad('CSS avec @import', 'instagram', (r) => (r.rules[0].css = ['@import "https://evil.example/x.css";']));
-  bad('redirection hors site', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = '//evil.example/'));
-  bad('redirection https', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = 'https://evil.example/'));
-  bad('regex invalide', 'instagram', (r) => (r.rules[1].urls[0].pattern = '('));
+  bad('redirection hors site', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = '//evil.example/'));
+  bad('redirection https', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = 'https://evil.example/'));
+  bad('regex invalide', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '('));
   bad('lien réécrit hors site', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.explore').rewriteLinks[0].href = 'https://evil.example/'));
   bad('version de format inconnue', 'instagram', (r) => (r.schemaVersion = 2));
   bad('mauvaise plateforme', 'instagram', (r) => (r.id = 'youtube'));
@@ -167,7 +170,9 @@ async function browserTests() {
   }
   const browser = await chromium.launch();
 
-  async function open(url, isEnabled = defaults) {
+  // Le fil « Abonnements » ajoute une redirection de « / » : testé à part, plus bas.
+  const noFollow = (id) => id !== 'ig.followingFeed' && defaults(id);
+  async function open(url, isEnabled = noFollow) {
     const page = await browser.newPage();
     // Toutes les requêtes reçoivent nos fausses pages (aucun accès réseau).
     await page.route('**/*', (route) => {
@@ -243,6 +248,27 @@ async function browserTests() {
     await page.close();
   }
 
+  // Fil « Abonnements » : « / » devient « /?variant=following », une seule fois (pas de boucle).
+  page = await open('https://www.instagram.com/', defaults);
+  let loads = 0;
+  page.on('load', () => loads++);
+  await page.waitForTimeout(1200);
+  assert.equal(pathOf(page), '/?variant=following', 'accueil -> fil Abonnements');
+  assert.equal(loads, 0, 'pas de redirection en boucle');
+  await page.close();
+
+  // Publicités : un post « Sponsorisé » est masqué, un post normal reste.
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<article id="ad"><header><span>marque</span><span>Sponsorisé</span></header></article>' +
+      '<article id="friend"><header><span>martin</span><span>Paris</span></header></article>');
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#ad'), true, 'publicité masquée');
+  assert.equal(await hidden(page, '#friend'), false, 'post d’un ami visible');
+  await page.close();
+
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');
@@ -264,6 +290,10 @@ async function browserTests() {
         window.__siteMoves = 0;
         document.getElementById('viewer').addEventListener('touchmove', () => window.__siteMoves++);
       </script></body></html>` }));
+    await p.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
     await p.addInitScript(buildInjectedScript(PLATFORMS, isEnabled));
     await p.goto('https://www.instagram.com/direct/t/123/');
     await p.waitForTimeout(250);
@@ -290,6 +320,7 @@ async function browserTests() {
   await swipe(page, 200, 500, 100);
   assert.equal(await scrollTop(page, '#viewer'), 0, 'pas de défilement vers le Reel suivant');
   assert.equal(await page.evaluate(() => window.__siteMoves), 0, 'le site ne reçoit pas le geste vertical');
+  assert.ok((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'feedLocked'), 'l’app est prévenue');
   await swipe(page, 200, 780, 640); // dans les commentaires : défilement libre
   assert.ok((await scrollTop(page, '#comments')) > 0, 'les commentaires défilent');
   // Vidéos du fil (format 4:5, ~60 % de la hauteur) : on défile normalement.
