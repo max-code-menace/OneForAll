@@ -57,8 +57,64 @@ export function buildInjectedScript(
   platforms: Platform[],
   isEnabled: (ruleId: string) => boolean,
 ): string {
-  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
+  return PAGE_HIDDEN_SCRIPT + RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
 }
+
+/**
+ * Commande envoyée à la page quand l'app la cache (retour à l'accueil) ou la réaffiche.
+ * Le réseau reste ouvert en arrière-plan : voir PAGE_HIDDEN_SCRIPT.
+ */
+export function setPageHiddenCommand(hidden: boolean): string {
+  return `window.__ONEFORALL_HIDDEN__ && window.__ONEFORALL_HIDDEN__(${hidden ? 'true' : 'false'}); true;`;
+}
+
+/**
+ * Page cachée par l'app (réseau gardé ouvert pendant qu'on est sur l'accueil).
+ * iOS, lui, croit qu'elle est encore à l'écran. On fait donc croire au SITE qu'il
+ * est en arrière-plan, comme un onglet de Safari qu'on quitte :
+ *  - document.visibilityState = 'hidden', document.hidden = true, hasFocus() = false,
+ *    puis les événements visibilitychange et blur. Les sites s'en servent pour se
+ *    mettre en veille, et pour ne pas marquer « Vu » un message arrivé pendant
+ *    qu'on n'est pas là (supposé : on ne voit pas leur code) ;
+ *  - vidéos et sons en pause, et toute lecture qui démarre est arrêtée aussitôt.
+ * Posé sur toutes les pages (même sans règles) ; ne change rien tant que l'app n'a pas caché la page.
+ */
+const PAGE_HIDDEN_SCRIPT = `
+(function () {
+  if (window.__ONEFORALL_HIDDEN__) return;
+  var hidden = false;
+  var proto = window.Document && Document.prototype;
+  function real(name) {
+    var d = proto && Object.getOwnPropertyDescriptor(proto, name);
+    return d && d.get ? function () { return d.get.call(document); } : null;
+  }
+  var realState = real('visibilityState'), realHidden = real('hidden');
+  try {
+    if (realState) Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return hidden ? 'hidden' : realState(); } });
+    if (realHidden) Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return hidden || realHidden(); } });
+    var realFocus = document.hasFocus;
+    if (realFocus) document.hasFocus = function () { return !hidden && realFocus.call(document); };
+  } catch (e) {}
+  function pauseAll() {
+    var media = document.querySelectorAll('video, audio');
+    for (var i = 0; i < media.length; i++) { try { media[i].pause(); } catch (e) {} }
+  }
+  // Pendant que la page est cachée, une vidéo qui démarre (lecture auto…) est arrêtée.
+  document.addEventListener('play', function (e) {
+    if (hidden && e.target && e.target.pause) { try { e.target.pause(); } catch (err) {} }
+  }, true);
+  window.__ONEFORALL_HIDDEN__ = function (h) {
+    h = !!h;
+    if (h === hidden) return;
+    hidden = h;
+    if (h) pauseAll();
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event(h ? 'blur' : 'focus'));
+    } catch (e) {}
+  };
+})();
+`;
 
 /**
  * Script pour `injectedJavaScript` (après chargement) : relance un nettoyage
@@ -524,8 +580,10 @@ const RUNTIME = `
   // d) Filet de sécurité si une navigation nous échappe.
   var lastHref = location.href;
   setInterval(function () {
+    if (document.hidden) return; // page cachée : rien à vérifier (relancé au retour, ci-dessous)
     if (location.href !== lastHref) { lastHref = location.href; run(); }
   }, 500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) run(); });
 
   window.__SANS_REELS__ = { run: run };
   run();

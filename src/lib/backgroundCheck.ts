@@ -1,7 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as BackgroundFetch from 'expo-background-fetch';
 import * as Notifications from 'expo-notifications';
-import { router } from 'expo-router';
 import { useEffect } from 'react';
 import * as TaskManager from 'expo-task-manager';
 
@@ -94,11 +93,11 @@ export async function syncAppBadge(count: number): Promise<void> {
 }
 
 /** Toucher la notification ouvre directement Instagram dans OneForAll. */
-export function useOpenFromNotification() {
+export function useOpenFromNotification(open: (id: 'instagram') => void) {
   const response = Notifications.useLastNotificationResponse();
   useEffect(() => {
-    if (response?.notification.request.content.data?.platform === 'instagram') {
-      router.push({ pathname: '/browser/[platform]', params: { platform: 'instagram' } });
-    }
+    if (response?.notification.request.content.data?.platform === 'instagram') open('instagram');
+    // Seulement quand une notification est touchée.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [response]);
 }

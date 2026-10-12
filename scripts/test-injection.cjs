@@ -534,6 +534,45 @@ async function browserTests() {
   assert.ok((await scrollTop(page, '#feed')) > 0, 'le fil hors vidéo défile normalement');
   await page.close();
 
+  // --- Réseau gardé ouvert mais caché (retour à l'accueil) : la page se croit en arrière-plan ---
+  page = await open('https://www.instagram.com/p/AAA/');
+  const vis = await page.evaluate(async () => {
+    const out = {};
+    let events = 0;
+    document.addEventListener('visibilitychange', () => events++);
+    const v = document.createElement('video');
+    let paused = 0;
+    v.pause = () => paused++; // pas de vrai fichier vidéo : on compte les mises en pause
+    document.body.appendChild(v);
+    out.before = [document.visibilityState, document.hidden];
+    window.__ONEFORALL_HIDDEN__(true);
+    out.hidden = [document.visibilityState, document.hidden, document.hasFocus()];
+    out.pausedOnHide = paused;
+    v.dispatchEvent(new Event('play')); // lecture auto pendant que c'est caché
+    out.pausedOnPlay = paused;
+    window.__ONEFORALL_HIDDEN__(true); // répété : rien de plus
+    window.__ONEFORALL_HIDDEN__(false);
+    out.shown = [document.visibilityState, document.hidden];
+    v.dispatchEvent(new Event('play'));
+    out.pausedAfter = paused;
+    out.events = events;
+    return out;
+  });
+  assert.deepEqual(vis.before, ['visible', false], 'visible au départ');
+  assert.deepEqual(vis.hidden, ['hidden', true, false], 'caché : la page se croit en arrière-plan');
+  assert.equal(vis.pausedOnHide, 1, 'vidéo en pause quand on cache');
+  assert.equal(vis.pausedOnPlay, 2, 'lecture arrêtée pendant que c’est caché');
+  assert.deepEqual(vis.shown, ['visible', false], 'réaffiché : de nouveau visible');
+  assert.equal(vis.pausedAfter, 2, 'réaffiché : la lecture n’est plus arrêtée');
+  assert.equal(vis.events, 2, 'le site est prévenu (visibilitychange) à chaque changement');
+  await page.close();
+  // La commande envoyée par l'app ne casse pas une page où le script est absent.
+  const { setPageHiddenCommand } = require('../src/lib/buildInjection.ts');
+  const bare = await browser.newPage();
+  await bare.setContent('<p>x</p>');
+  await bare.evaluate(setPageHiddenCommand(true));
+  await bare.close();
+
   // --- YouTube ---
   page = await open('https://m.youtube.com/');
   assert.equal(await hidden(page, '#shelf'), true, 'étagère Shorts masquée');

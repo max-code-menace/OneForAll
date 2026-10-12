@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Linking, Pressable, Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { WebViewNavigationEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -6,7 +6,7 @@ import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTyp
 
 import { syncAppBadge } from '../lib/backgroundCheck';
 import { findBannedSite } from '../lib/banned';
-import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
+import { AFTER_LOAD_SCRIPT, buildInjectedScript, setPageHiddenCommand } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { INSIDE_HOSTS } from '../lib/sites';
@@ -26,7 +26,12 @@ const SAFARI_APP_NAME = `Version/${String(RNPlatform.Version).split('.').slice(0
 
 type Props = {
   platform: Platform;
-  /** Bandeau affiché 0,5 s après l'ouverture (ex. « Reels masqués »). */
+  /**
+   * Affiché à l'écran ? Le réseau reste ouvert quand on revient à l'accueil : il est
+   * seulement caché (vidéos en pause, la page se croit en arrière-plan).
+   */
+  visible: boolean;
+  /** Bandeau affiché 0,5 s après la 1re apparition (ex. « Reels masqués »). */
   welcome?: string;
   /** Pendant le tuto : le bandeau reste affiché tant que c'est vrai. */
   holdWelcome?: boolean;
@@ -38,7 +43,7 @@ type Props = {
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props) {
+export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -70,19 +75,26 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
   /** Augmente à chaque « Réessayer » : la WebView repart de zéro. */
   const [attempt, setAttempt] = useState(0);
 
-  // Script construit une fois, à l'ouverture du site : si des règles plus récentes
-  // arrivent pendant qu'on est sur la page, elles s'appliqueront à la prochaine
-  // ouverture (sinon la page se rechargerait d'un coup, et un message en cours serait perdu).
-  const [script] = useState(() => buildInjectedScript(platforms, isEnabled));
+  // Le script est figé à la création de la page : des règles qui changent pendant qu'on est
+  // dessus ne la rechargent pas d'un coup (un message en cours serait perdu). Elles sont
+  // appliquées quand le réseau est caché (un rechargement en arrière-plan), voir plus bas.
+  const fresh = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
+  const [script, setScript] = useState(fresh);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   // Domaines des réseaux (les liens entre réseaux restent dans l'app, filtrés).
   const allHosts = platforms.flatMap((p) => p.hosts);
 
-  // À l'ouverture : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
+  // À la 1re apparition : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
+  // Pas à chaque retour : le réseau est resté ouvert, rien n'a changé.
+  const welcomed = useRef(false);
   useEffect(() => {
-    if (welcome) toast.current?.show(welcome, 500, holdWelcome ? Infinity : 2500);
-    // Seulement à l'ouverture ; la fin du tuto est gérée juste en dessous.
+    if (!visible || welcomed.current || !welcome) return;
+    welcomed.current = true;
+    toast.current?.show(welcome, 500, holdWelcome ? Infinity : 2500);
+    // Seulement à la 1re apparition ; la fin du tuto est gérée juste en dessous.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [welcome]);
+  }, [visible, welcome]);
   const wasHolding = useRef(holdWelcome);
   useEffect(() => {
     if (holdWelcome && welcome) toast.current?.show(welcome, 0, Infinity);
@@ -92,8 +104,44 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdWelcome]);
 
+  /** iOS a fermé la page cachée (mémoire) : rechargée quand on la réaffiche. */
+  const killedWhileHidden = useRef(false);
+
+  // Caché / réaffiché : on prévient la page (veille, vidéos en pause).
+  useEffect(() => {
+    webRef.current?.injectJavaScript(setPageHiddenCommand(!visible));
+    if (visible && killedWhileHidden.current) {
+      killedWhileHidden.current = false;
+      webRef.current?.reload();
+    }
+  }, [visible]);
+
+  // Règles changées (Réglages, mise à jour) : appliquées dès que le réseau est caché,
+  // par un rechargement en arrière-plan (jamais sous les yeux de l'utilisateur).
+  useEffect(() => {
+    if (fresh === script || visible) return;
+    const timer = setTimeout(() => {
+      nextCause.current = 'règles changées';
+      setScript(fresh);
+      setAttempt((n) => n + 1);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [fresh, script, visible]);
+
+  /**
+   * iOS a fermé la page pour libérer de la mémoire (fréquent après un long moment en
+   * arrière-plan) : sans rien faire, elle resterait blanche. On la recharge, tout de
+   * suite si elle est affichée, sinon au moment où on la réaffiche.
+   */
+  function onContentProcessDidTerminate() {
+    nextCause.current = 'page fermée par iOS';
+    if (visibleRef.current) webRef.current?.reload();
+    else killedWhileHidden.current = true;
+  }
+
   function showBanner(text: string) {
-    toast.current?.show(text);
+    // Page cachée : pas de bandeau (il apparaîtrait sur l'accueil).
+    if (visibleRef.current) toast.current?.show(text);
   }
 
   /** Appelé AVANT chaque chargement de page : on bloque/redirige si besoin. */
@@ -223,6 +271,11 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
         onLoadStart={onLoadStart}
+        // Page cachée : à chaque nouvelle page chargée, on lui redit qu'elle est en arrière-plan.
+        onLoadEnd={() => {
+          if (!visibleRef.current) webRef.current?.injectJavaScript(setPageHiddenCommand(true));
+        }}
+        onContentProcessDidTerminate={onContentProcessDidTerminate}
         // --- Confort -------------------------------------------------------
         // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
