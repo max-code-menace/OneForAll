@@ -10,10 +10,15 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  *   3. masque en JS ce que le CSS ne sait pas cibler (texte, ancêtre…) ;
  *   4. recommence à chaque changement de la page (MutationObserver = scroll infini)
  *      et à chaque navigation interne (history.pushState des sites "SPA") ;
- *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante.
+ *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante ;
+ *   6. signale à l'app un glissement depuis le bord de l'écran (changement d'onglet).
+ *
+ * Sécurité : les règles viennent d'un fichier téléchargé. Aucun de leurs textes
+ * n'est inséré comme du HTML, et chaque redirection est revérifiée après
+ * remplacement de $1, $2… (même logique que isSafeTarget, src/lib/urlRules.ts).
  */
 
-type InjectedUrlRule = { pattern: string; redirectTo: string | null; label: string };
+type InjectedUrlRule = { pattern: string; redirectTo: string | null; label: string; silent: boolean };
 
 type InjectedConfig = {
   hosts: string[];
@@ -35,18 +40,24 @@ export function buildConfig(
       css: rules.map((r) => r.css ?? '').join('\n'),
       hide: rules.flatMap((r) => r.hide ?? []),
       rewrite: rules.flatMap((r) => r.rewriteLinks ?? []),
-      urls: rules.flatMap((r) => (r.urls ?? []).map((u) => ({ ...u, label: r.label }))),
+      urls: rules.flatMap((r) => (r.urls ?? []).map((u) => ({ ...u, label: r.label, silent: !!r.silent }))),
       lockFeed: rules.some((r) => r.lockVideoFeed),
     };
   });
 }
+
+/** Bords de l'écran qui captent le glissement (pt), et distance à parcourir vers l'intérieur. */
+export const EDGE_WIDTH = 22;
+export const EDGE_THRESHOLD = 50;
 
 /** Script pour `injectedJavaScriptBeforeContentLoaded` (s'exécute avant la page). */
 export function buildInjectedScript(
   platforms: Platform[],
   isEnabled: (ruleId: string) => boolean,
 ): string {
-  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
+  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)))
+    .replace(/__EDGE__/g, String(EDGE_WIDTH))
+    .replace(/__THRESHOLD__/g, String(EDGE_THRESHOLD));
 }
 
 /**
@@ -64,6 +75,34 @@ const RUNTIME = `
   if (window.__SANS_REELS__) { window.__SANS_REELS__.run(); return; }
 
   var ALL = __CONFIG__;
+
+  // Envoie un message à l'app (pour afficher "Reel bloqué", etc.).
+  function post(msg) {
+    try {
+      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
+    } catch (e) {}
+  }
+
+  // --- 0. Bords de l'écran : glisser vers l'intérieur = onglet suivant / précédent --
+  // Détecté ici, dans la page, pour que les appuis près des bords restent aux
+  // boutons du site (une zone posée par-dessus la page les avalerait tous).
+  var edge = null;
+  window.addEventListener('touchstart', function (e) {
+    edge = null;
+    if (e.touches.length !== 1) return;
+    var x = e.touches[0].clientX, W = window.innerWidth;
+    if (x <= __EDGE__) edge = { dir: -1, x: x, y: e.touches[0].clientY };
+    else if (x >= W - __EDGE__) edge = { dir: 1, x: x, y: e.touches[0].clientY };
+  }, { capture: true, passive: true });
+  window.addEventListener('touchcancel', function () { edge = null; }, true);
+  window.addEventListener('touchend', function (e) {
+    var g = edge, t = e.changedTouches && e.changedTouches[0];
+    edge = null;
+    if (!g || !t) return;
+    var dx = t.clientX - g.x, dy = t.clientY - g.y;
+    var inward = g.dir === 1 ? -dx : dx;
+    if (inward >= __THRESHOLD__ && Math.abs(dy) < Math.abs(dx)) post({ type: 'edgeSwipe', dir: g.dir });
+  }, true);
 
   function hostMatches(host, hosts) {
     for (var i = 0; i < hosts.length; i++) {
@@ -84,13 +123,6 @@ const RUNTIME = `
   }
   if (!css.trim() && !hide.length && !rewrite.length && !urls.length && !lockFeed) return;
 
-  // Envoie un message à l'app (pour afficher "Reel bloqué", etc.).
-  function post(msg) {
-    try {
-      if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(msg));
-    } catch (e) {}
-  }
-
   // --- 1. URLs -------------------------------------------------------------
   // Même logique que isAlreadyThere (src/lib/urlRules.ts) : pas de redirection en boucle.
   function alreadyThere(path, search, target) {
@@ -103,6 +135,11 @@ const RUNTIME = `
     return true;
   }
 
+  // Même logique que isSafeTarget (src/lib/urlRules.ts) : « /chemin », jamais « //autre.site ».
+  function safeTarget(t) {
+    return /^\\/(?![\\/\\\\])/.test(t) && !/[\\s\\\\]/.test(t);
+  }
+
   // Renvoie { block: true } / { target: '/nouveau/chemin' } / null.
   function urlAction(path, search) {
     for (var i = 0; i < urls.length; i++) {
@@ -111,9 +148,9 @@ const RUNTIME = `
       if (!re.test(path)) continue;
       if (urls[i].redirectTo === null) return { block: true, label: urls[i].label };
       var target = path.replace(re, urls[i].redirectTo);
-      if (alreadyThere(path, search, target)) continue;
+      if (!safeTarget(target) || alreadyThere(path, search, target)) continue;
       if (target.indexOf('?') < 0) target += search || '';
-      return { target: target, label: urls[i].label };
+      return { target: target, label: urls[i].label, silent: urls[i].silent };
     }
     return null;
   }
@@ -122,12 +159,25 @@ const RUNTIME = `
   function blockPage(label) {
     leaving = true;
     post({ type: 'blocked', label: label });
-    var html =
-      '<body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;' +
-      'justify-content:center;font-family:-apple-system,sans-serif;background:#111;color:#fff;text-align:center;padding:24px">' +
-      '<div style="font-size:56px">🚫</div><h2>Page bloquée</h2><p style="opacity:.7">' + label + '</p></body>';
+    // Page construite élément par élément : le libellé (venu des règles) reste du
+    // simple texte, il ne peut jamais devenir du HTML ou du code.
+    function el(tag, style, text) {
+      var e = document.createElement(tag);
+      if (style) e.setAttribute('style', style);
+      if (text) e.textContent = text;
+      return e;
+    }
     function render() {
-      if (document.documentElement) document.documentElement.innerHTML = html;
+      var root = document.documentElement;
+      if (!root) return;
+      while (root.firstChild) root.removeChild(root.firstChild);
+      var body = el('body',
+        'margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;' +
+        'font-family:-apple-system,sans-serif;background:#111;color:#fff;text-align:center;padding:24px');
+      body.appendChild(el('div', 'font-size:56px', '🚫'));
+      body.appendChild(el('h2', '', 'Page bloquée'));
+      body.appendChild(el('p', 'opacity:.7', String(label || '')));
+      root.appendChild(body);
     }
     // Maintenant si possible, puis à nouveau une fois la page lue (elle aurait
     // pu ré-écrire du contenu entre-temps).
@@ -142,7 +192,7 @@ const RUNTIME = `
     if (!a) return false;
     if (a.block) { blockPage(a.label); return true; }
     leaving = true;
-    post({ type: 'redirected', label: a.label });
+    if (!a.silent) post({ type: 'redirected', label: a.label });
     location.replace(a.target);
     return true;
   }
@@ -237,11 +287,11 @@ const RUNTIME = `
     if (!a || a.host !== location.host) return;
     var rewritten = a.getAttribute('data-sans-reels-href');
     var action = rewritten ? { target: rewritten } : urlAction(a.pathname, a.search);
-    if (!action) return;
+    if (!action || (action.target && !safeTarget(action.target))) return;
     e.preventDefault();
     e.stopImmediatePropagation();
     if (action.block) { post({ type: 'blocked', label: action.label }); return; }
-    if (action.label) post({ type: 'redirected', label: action.label });
+    if (action.label && !action.silent) post({ type: 'redirected', label: action.label });
     location.assign(action.target);
   }, true);
 
@@ -278,6 +328,8 @@ const RUNTIME = `
     var gesture = null, lastNotice = 0;
     var start = function (target, x, y) {
       gesture = null;
+      // Stories : plein écran aussi, mais on doit pouvoir les fermer en glissant vers le bas.
+      if (/^\\/stories\\//.test(location.pathname)) return;
       var v = fullVideo();
       if (!v) return;
       var inner = scrollableParent(target);
@@ -297,8 +349,10 @@ const RUNTIME = `
           }
         }
       }
-      // Toujours annuler le défilement natif (sinon il démarre avant qu'on ait tranché) ;
-      // en vertical, le site ne reçoit pas non plus le geste.
+      // Tant qu'on n'a pas tranché, et en vertical : pas de défilement natif (sinon il
+      // démarre trop tôt). En vertical, le site ne reçoit pas non plus le geste.
+      // En horizontal : rien n'est bloqué (carrousels…).
+      if (gesture.vertical === false) return;
       if (e.cancelable && e.type === 'touchmove') e.preventDefault();
       if (gesture.vertical) e.stopPropagation();
     };

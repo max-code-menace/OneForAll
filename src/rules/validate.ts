@@ -9,8 +9,12 @@ import type { HideRule, Platform, RewriteLinkRule, Rule, UrlRule } from './types
  *
  *  - Seuls des champs connus sont gardés (le reste est ignoré).
  *  - Pas de code : uniquement des sélecteurs, du texte, des regex et du CSS.
- *  - Le CSS ne peut rien charger depuis Internet (url(), @import… interdits).
- *  - Les redirections restent sur le même site (chemins commençant par "/").
+ *  - Le CSS ne peut rien charger depuis Internet (url(), @import… interdits,
+ *    ainsi que « \ », qui permettrait d'écrire « url( » de façon déguisée).
+ *  - Les textes affichés (libellés…) ne peuvent pas contenir de balises HTML.
+ *  - Les redirections restent sur le même site (chemins commençant par "/", et
+ *    le moteur revérifie le résultat après remplacement de $1, $2…).
+ *  - Les expressions régulières qui peuvent tourner sans fin sont refusées.
  *  - Au moindre doute, le fichier ENTIER est refusé et l'app garde ses règles
  *    précédentes.
  */
@@ -22,8 +26,21 @@ const PLATFORM_IDS = ['instagram', 'youtube', 'facebook'] as const;
 const MAX_CSS = 20_000;
 const MAX_RULES = 60;
 
-/** Le CSS ne doit rien pouvoir charger ni exécuter (pas de fuite par requête réseau). */
-const FORBIDDEN_CSS = [/url\s*\(/i, /@import/i, /@font-face/i, /image-set\s*\(/i, /expression\s*\(/i, /javascript:/i];
+/**
+ * Le CSS ne doit rien pouvoir charger ni exécuter (pas de fuite par requête réseau).
+ * « \ » est interdit : en CSS, « \75 rl( » se lit « url( » et passerait le filtre.
+ * Seule la règle « @media » est permise (les autres, @import, @font-face…, chargent ou déclarent).
+ */
+const FORBIDDEN_CSS = [
+  /\\/,
+  /@(?!media\b)/i,
+  /url\s*\(/i,
+  /image-set\s*\(/i,
+  /image\s*\(/i,
+  /src\s*\(/i,
+  /expression\s*\(/i,
+  /javascript:/i,
+];
 
 function fail(where: string, message: string): never {
   throw new Error(`${where} : ${message}`);
@@ -42,6 +59,45 @@ function text(v: unknown, where: string, max = 300): string {
 
 function optionalText(v: unknown, where: string, max = 300): string | undefined {
   return v === undefined ? undefined : text(v, where, max);
+}
+
+/** Texte affiché à l'écran : jamais de balise ni d'entité HTML. */
+function plainText(v: unknown, where: string, max = 300): string {
+  const s = text(v, where, max);
+  if (/[<>&]/.test(s)) fail(where, 'texte simple attendu (sans < > &)');
+  return s;
+}
+
+function optionalPlainText(v: unknown, where: string, max = 300): string | undefined {
+  return v === undefined ? undefined : plainText(v, where, max);
+}
+
+/**
+ * Expression régulière sûre : valide, et sans les constructions qui peuvent faire
+ * calculer le téléphone sans fin (« (a+)+ », références arrière \1…).
+ */
+function safePattern(v: unknown, where: string): string {
+  const pattern = text(v, where, 200);
+  try {
+    new RegExp(pattern);
+  } catch {
+    fail(where, 'expression régulière invalide');
+  }
+  // Groupe qui contient une répétition (+ * {n,}) et qui est lui-même répété.
+  if (/\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)\s*[+*{]/.test(pattern)) {
+    fail(where, 'répétition imbriquée interdite (risque de blocage)');
+  }
+  if (/\\[1-9k]/.test(pattern)) fail(where, 'référence arrière interdite');
+  return pattern;
+}
+
+/** Cible de redirection : chemin interne, seuls $1 à $9 sont permis comme remplacements. */
+function redirectTarget(v: unknown, where: string): string {
+  const s = internalPath(v, where);
+  if (/\$(?![1-9])/.test(s)) fail(where, 'seuls $1 à $9 sont permis');
+  // « /$1… » pourrait encore donner « //autre.site » : le moteur revérifie donc la cible
+  // après remplacement (safeTarget dans urlRules.ts et dans le script injecté).
+  return s;
 }
 
 function array(v: unknown, where: string, max = 100): unknown[] {
@@ -97,13 +153,8 @@ function sanitizeRewrite(raw: unknown, where: string): RewriteLinkRule {
 
 function sanitizeUrlRule(raw: unknown, where: string): UrlRule {
   if (!isObject(raw)) return fail(where, 'objet attendu');
-  const pattern = text(raw.pattern, `${where}.pattern`, 200);
-  try {
-    new RegExp(pattern);
-  } catch {
-    fail(`${where}.pattern`, 'expression régulière invalide');
-  }
-  const redirectTo = raw.redirectTo === null ? null : internalPath(raw.redirectTo, `${where}.redirectTo`);
+  const pattern = safePattern(raw.pattern, `${where}.pattern`);
+  const redirectTo = raw.redirectTo === null ? null : redirectTarget(raw.redirectTo, `${where}.redirectTo`);
   return { pattern, redirectTo };
 }
 
@@ -120,10 +171,10 @@ function sanitizeRule(raw: unknown, index: number): Rule {
 
   const rule: Rule = {
     id,
-    label: text(raw.label, `${name}.label`, 120),
+    label: plainText(raw.label, `${name}.label`, 120),
     defaultEnabled: raw.defaultEnabled,
   };
-  const description = optionalText(raw.description, `${name}.description`, 400);
+  const description = optionalPlainText(raw.description, `${name}.description`, 400);
   if (description) rule.description = description;
   const css = cssText(raw.css, `${name}.css`);
   if (css) rule.css = css;
@@ -136,6 +187,10 @@ function sanitizeRule(raw: unknown, index: number): Rule {
   if (rewrite.length) rule.rewriteLinks = rewrite;
   const urls = array(raw.urls, `${name}.urls`).map((u, i) => sanitizeUrlRule(u, `${name}.urls[${i}]`));
   if (urls.length) rule.urls = urls;
+  if (raw.silent !== undefined) {
+    if (typeof raw.silent !== 'boolean') fail(`${name}.silent`, 'vrai/faux attendu');
+    if (raw.silent) rule.silent = true;
+  }
   if (raw.lockVideoFeed !== undefined) {
     if (typeof raw.lockVideoFeed !== 'boolean') fail(`${name}.lockVideoFeed`, 'vrai/faux attendu');
     if (raw.lockVideoFeed) rule.lockVideoFeed = true;
@@ -177,7 +232,7 @@ export function sanitizePlatform(raw: unknown): Platform {
   const rules = sanitizeRules(raw.rules);
   const platform: Platform = {
     id: id as Platform['id'],
-    name: text(raw.name, 'name', 40),
+    name: plainText(raw.name, 'name', 40),
     startUrl,
     hosts,
     color,

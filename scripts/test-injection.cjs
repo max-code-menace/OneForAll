@@ -3,7 +3,8 @@
  * sur de fausses pages Instagram / YouTube.
  *
  * Lancer :  npm run test:inject
- * (nécessite Playwright : `npm i -D playwright` ou une installation globale)
+ * (nécessite Playwright : `npm i -D playwright` ou une installation globale ;
+ *  sans lui le test ÉCHOUE, sauf avec SANS_NAVIGATEUR=1 pour ne lancer que la 1re partie)
  *
  * Ça ne prouve pas que les sélecteurs collent au HTML ACTUEL d'Instagram
  * (seul un test sur iPhone le dit), mais ça vérifie que le moteur fonctionne :
@@ -27,7 +28,7 @@ const { DEFAULT_PLATFORMS: PLATFORMS } = require('../src/rules/index.ts');
 const { mergeRemoteRules, sanitizePlatform } = require('../src/rules/validate.ts');
 const ALL_RULES = PLATFORMS.flatMap((p) => p.rules);
 const { buildInjectedScript } = require('../src/lib/buildInjection.ts');
-const { findUrlAction } = require('../src/lib/urlRules.ts');
+const { findUrlAction, isSafeTarget } = require('../src/lib/urlRules.ts');
 const { findBannedSite } = require('../src/lib/banned.ts');
 
 const defaults = (id) => ALL_RULES.find((r) => r.id === id).defaultEnabled;
@@ -65,6 +66,16 @@ function urlTests() {
   assert.equal(t('https://m.facebook.com/reelsfan/'), null);
   assert.equal(t('https://m.facebook.com/messages/'), null);
   assert.deepEqual(PLATFORMS.map((p) => p.id), ['instagram', 'youtube', 'facebook']);
+
+  // Une règle qui échapperait à la validation ne peut pas envoyer vers un autre site :
+  // la cible est revérifiée après remplacement de $1.
+  const evil = [{ ...PLATFORMS[0], rules: [{ id: 'ig.x', label: 'x', defaultEnabled: true,
+    urls: [{ pattern: '^(/)fuite/$', redirectTo: '/$1evil.example/' }] }] }];
+  assert.equal(findUrlAction(evil, 'https://www.instagram.com/fuite/', () => true), null, 'pas de sortie vers //evil');
+  for (const t of ['/', '/a/b?c=1', '/watch?v=x']) assert.equal(isSafeTarget(t), true, t);
+  for (const t of ['//evil.example/', '/\\evil.example/', 'https://evil.example/', 'evil', '/a b']) {
+    assert.equal(isSafeTarget(t), false, t);
+  }
 
   // TikTok est banni, partout, y compris via les liens courts. Les noms qui y ressemblent ne le sont pas.
   const banned = (u) => findBannedSite(u);
@@ -116,6 +127,21 @@ function validationTests() {
   bad('id de règle en double', 'instagram', (r) => (r.rules[1].id = r.rules[0].id));
   bad('id de règle invalide', 'instagram', (r) => (r.rules[0].id = 'x y'));
   bad('defaultEnabled absent', 'instagram', (r) => delete r.rules[0].defaultEnabled);
+  // Attaques trouvées par l'audit : chacune doit être refusée.
+  bad('libellé avec du HTML', 'instagram', (r) => (r.rules[0].label = '<img src=x onerror="alert(1)">'));
+  bad('description avec du HTML', 'instagram', (r) => (r.rules[0].description = '<b>x</b>'));
+  bad('CSS url() déguisé', 'instagram', (r) => (r.rules[0].css = ['a { background: \\75 rl(https://evil.example/x) }']));
+  bad('CSS @font-face', 'instagram', (r) => (r.rules[0].css = ['@font-face { font-family: x }']));
+  bad('CSS image()', 'instagram', (r) => (r.rules[0].css = ['a { background: image("x.png") }']));
+  bad('redirection avec $&', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = '/$&evil.example/'));
+  bad('redirection avec $`', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = '/$`x'));
+  bad('regex qui peut tourner sans fin', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(a+)+$'));
+  bad('regex qui peut tourner sans fin (2)', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(?:.*)*x$'));
+  bad('référence arrière', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(a)\\1$'));
+  bad('silent pas vrai/faux', 'instagram', (r) => (r.rules[0].silent = 'oui'));
+  // Les redirections du dépôt ($1 compris) restent acceptées.
+  assert.equal(base('instagram').rules.find((x) => x.id === 'ig.profileReels').urls[0].redirectTo, '/$1/');
+  assert.equal(base('instagram').rules.find((x) => x.id === 'ig.followingFeed').silent, true);
   assert.throws(() => mergeRemoteRules(base('instagram'), 'n importe quoi'));
   assert.throws(() => mergeRemoteRules(base('instagram'), null));
 
@@ -165,8 +191,12 @@ async function browserTests() {
   try {
     ({ chromium } = require('playwright'));
   } catch {
-    console.log('⚠ Playwright absent : tests navigateur ignorés.');
-    return;
+    if (process.env.SANS_NAVIGATEUR === '1') {
+      console.log('⚠ SANS_NAVIGATEUR=1 : tests navigateur ignorés.');
+      return;
+    }
+    // Ne pas afficher « réussi » si la moitié des tests n'a pas tourné.
+    throw new Error('Playwright absent : installe-le (npm i -D playwright) ou lance avec SANS_NAVIGATEUR=1.');
   }
   const browser = await chromium.launch();
 
@@ -260,7 +290,46 @@ async function browserTests() {
   await page.waitForTimeout(1200);
   assert.equal(pathOf(page), '/?variant=following', 'accueil -> fil Abonnements');
   assert.equal(loads, 0, 'pas de redirection en boucle');
+  assert.equal(
+    (await page.evaluate(() => window.__msgs)).some((m) => m.type === 'redirected'),
+    false,
+    'fil Abonnements : pas de bandeau à chaque retour à l’accueil',
+  );
   await page.close();
+
+  // --- Règles piégées qui auraient échappé à la validation : le moteur tient bon ---
+  async function openWith(platforms, url) {
+    const p = await browser.newPage();
+    const requested = [];
+    await p.route('**/*', (route) => {
+      requested.push(route.request().url());
+      route.fulfill({ contentType: 'text/html', body: '<html><head></head><body><a id="l" href="/fuite/">x</a></body></html>' });
+    });
+    await p.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await p.addInitScript(buildInjectedScript(platforms, () => true));
+    await p.goto(url);
+    await p.waitForTimeout(400);
+    return { p, requested };
+  }
+  const trap = [{ ...PLATFORMS[0], rules: [
+    { id: 'ig.x', label: '<img src=x onerror="window.__pwned=1">', defaultEnabled: true, urls: [{ pattern: '^/bloque/$', redirectTo: null }] },
+    { id: 'ig.y', label: 'y', defaultEnabled: true, urls: [{ pattern: '^(/)fuite/$', redirectTo: '/$1evil.example/' }] },
+  ] }];
+  let r = await openWith(trap, 'https://www.instagram.com/bloque/');
+  assert.equal(await r.p.evaluate(() => window.__pwned), undefined, 'libellé jamais exécuté comme du code');
+  assert.match(await r.p.evaluate(() => document.body.textContent), /Page bloquée/, 'page bloquée affichée');
+  assert.match(await r.p.evaluate(() => document.body.textContent), /<img/, 'libellé affiché comme simple texte');
+  await r.p.close();
+  r = await openWith(trap, 'https://www.instagram.com/fuite/');
+  assert.equal(new URL(r.p.url()).host, 'www.instagram.com', 'pas de sortie vers un autre site');
+  await r.p.click('#l');
+  await r.p.waitForTimeout(300);
+  assert.equal(new URL(r.p.url()).host, 'www.instagram.com', 'clic : pas de sortie vers un autre site');
+  assert.equal(r.requested.some((u) => u.includes('evil.example')), false, 'aucune requête vers evil');
+  await r.p.close();
 
   // Publicités : un post « Sponsorisé » est masqué, un post normal reste.
   page = await open('https://www.instagram.com/p/AAA/');
@@ -328,10 +397,60 @@ async function browserTests() {
   assert.ok((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'feedLocked'), 'l’app est prévenue');
   await swipe(page, 200, 780, 640); // dans les commentaires : défilement libre
   assert.ok((await scrollTop(page, '#comments')) > 0, 'les commentaires défilent');
+  // Glissement horizontal sur la vidéo : pas bloqué (carrousels…), pas de bandeau.
+  await page.evaluate(() => (window.__msgs = []));
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 300, y: 400 }] });
+  await page.evaluate(() => {
+    window.__prevented = 0;
+    window.addEventListener('touchmove', (e) => { if (e.defaultPrevented) window.__prevented++; });
+  });
+  for (let i = 1; i <= 6; i++) {
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 300 - i * 30, y: 402 }] });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await page.waitForTimeout(200);
+  assert.ok((await page.evaluate(() => window.__prevented)) <= 1, 'glissement horizontal laissé libre');
+  assert.equal((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'feedLocked'), false, 'pas de bandeau en horizontal');
   // Vidéos du fil (format 4:5, ~60 % de la hauteur) : on défile normalement.
   await page.evaluate(() => document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '60vh')));
   await swipe(page, 200, 500, 100);
   assert.ok((await scrollTop(page, '#viewer')) > 0, 'le fil avec des vidéos normales défile');
+  await page.close();
+
+  // Stories (plein écran aussi) : on peut toujours glisser vers le bas pour les fermer.
+  page = await openViewer(defaults);
+  await page.evaluate(() => history.replaceState({}, '', '/stories/martin/123/'));
+  await swipe(page, 200, 100, 500);
+  assert.equal(await page.evaluate(() => window.__siteMoves), 8, 'story : le site reçoit le glissement');
+  await page.close();
+
+  // --- Bords de l'écran : glisser vers l'intérieur = changer d'onglet ; un appui reste au site ---
+  page = await openViewer(() => false);
+  const edgeCdp = await page.context().newCDPSession(page);
+  async function drag(x1, x2, y = 300) {
+    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y }] });
+    for (let i = 1; i <= 6; i++) {
+      await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * i) / 6, y }] });
+    }
+    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.waitForTimeout(100);
+  }
+  const edges = async () => (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'edgeSwipe').map((m) => m.dir);
+  await drag(372, 250); // depuis le bord droit (avant la barre de défilement de Chromium)
+  await drag(5, 150); // depuis le bord gauche
+  await drag(200, 60); // au milieu : rien
+  await drag(372, 360); // trop court : rien
+  assert.deepEqual(await edges(), [1, -1], 'glissements depuis les bords signalés');
+  await page.evaluate(() => {
+    const b = document.createElement('button');
+    b.id = 'edgeBtn';
+    b.style.cssText = 'position:fixed;left:0;top:20px;width:30px;height:30px;z-index:9';
+    b.onclick = () => (window.__tapped = true);
+    document.body.appendChild(b);
+  });
+  await page.tap('#edgeBtn');
+  assert.equal(await page.evaluate(() => window.__tapped), true, 'un bouton au bord de l’écran répond');
   await page.close();
 
   // --- YouTube ---

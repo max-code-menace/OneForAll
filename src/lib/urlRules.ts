@@ -37,6 +37,15 @@ export function isAlreadyThere(path: string, search: string, target: string): bo
   return tQuery.split('&').every((p) => p === '' || have.includes(p));
 }
 
+/**
+ * Une cible de redirection doit rester sur le même site : « /chemin », jamais
+ * « //autre.site » ni « /\autre.site » (que le navigateur lirait comme un autre site).
+ * Vérifié APRÈS le remplacement de $1, $2… (le fichier de règles seul ne suffit pas).
+ */
+export function isSafeTarget(target: string): boolean {
+  return /^\/(?![/\\])/.test(target) && !/[\s\\]/.test(target);
+}
+
 export function findUrlAction(
   platforms: Platform[],
   url: string,
@@ -54,6 +63,7 @@ export function findUrlAction(
         if (!re.test(u.path)) continue;
         if (r.redirectTo === null) return { type: 'block', rule, platform };
         let target = u.path.replace(re, r.redirectTo);
+        if (!isSafeTarget(target)) continue;
         if (isAlreadyThere(u.path, u.search, target)) continue;
         // On garde les paramètres d'origine sauf si la cible en définit déjà.
         if (!target.includes('?')) target += u.search;

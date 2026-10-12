@@ -3,14 +3,26 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 /**
  * Nombre de messages non lus par réseau, pour la pastille de l'accueil.
  *
+ * DÉSACTIVÉE par défaut (Réglages → « Pastille des messages Instagram »).
  * Deux sources, toutes deux SUR LE TÉLÉPHONE (rien ne passe par un serveur à nous) :
  *  - le titre de la page quand le site est ouvert (« (3) Instagram ») ;
  *  - pour Instagram, une petite requête directe à instagram.com, avec ta connexion
- *    (cookies) déjà enregistrée par iOS : à l'ouverture de l'accueil et, si tu l'as
- *    activé, de temps en temps en arrière-plan (voir backgroundCheck.ts).
+ *    (cookies) déjà enregistrée par iOS : à l'ouverture de l'accueil si la pastille
+ *    est activée et, si les notifications sont activées, de temps en temps en
+ *    arrière-plan (voir backgroundCheck.ts).
  */
 
 const KEY = 'oneforall:unread:v1';
+const BADGE_KEY = 'oneforall:unread-badge:v1';
+
+/** La pastille de l'accueil est-elle activée ? (non par défaut) */
+export async function isBadgeEnabled(): Promise<boolean> {
+  return (await AsyncStorage.getItem(BADGE_KEY).catch(() => null)) === 'true';
+}
+
+export async function setBadgeEnabled(enabled: boolean): Promise<void> {
+  await AsyncStorage.setItem(BADGE_KEY, String(enabled)).catch(() => {});
+}
 
 export async function readUnread(): Promise<Record<string, number>> {
   try {

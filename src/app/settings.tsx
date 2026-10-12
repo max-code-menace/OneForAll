@@ -9,6 +9,7 @@ import { isNotificationsEnabled, setNotificationsEnabled } from '../lib/backgrou
 import { useIntro } from '../lib/intro';
 import { useRules, type RulesStatus } from '../lib/rules';
 import { useSettings } from '../lib/settings';
+import { isBadgeEnabled, setBadgeEnabled } from '../lib/unread';
 import { EASE, useReduceMotion, useTheme, type Theme } from '../lib/theme';
 
 const TOUR: TourStep[] = [
@@ -30,26 +31,34 @@ export default function SettingsScreen() {
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
   const { showOnboarding } = useIntro();
   const [notifications, setNotifications] = useState(false);
+  const [badge, setBadge] = useState(false);
   // Petit tuto la 1re fois (après l'arrivée de l'écran).
   const tour = useTour('settings', TOUR, true, 600);
   useEffect(() => {
     isNotificationsEnabled().then(setNotifications);
+    isBadgeEnabled().then(setBadge);
   }, []);
+
+  function toggleBadge(value: boolean) {
+    setBadge(value);
+    setBadgeEnabled(value);
+  }
 
   async function toggleNotifications(value: boolean) {
     setNotifications(value);
-    const ok = await setNotificationsEnabled(value).catch(() => false);
-    if (value && !ok) {
-      setNotifications(false);
-      Alert.alert(
-        'Notifications refusées',
-        'Pour les recevoir, autorise les notifications de OneForAll dans les Réglages de l’iPhone.',
-        [
-          { text: 'Plus tard', style: 'cancel' },
-          { text: 'Ouvrir les Réglages', onPress: () => Linking.openSettings() },
-        ],
-      );
-    }
+    const result = await setNotificationsEnabled(value).catch(() => 'background-off' as const);
+    if (!value || result === 'ok') return;
+    setNotifications(false);
+    Alert.alert(
+      result === 'denied' ? 'Notifications refusées' : 'Actualisation en arrière-plan coupée',
+      result === 'denied'
+        ? 'Pour les recevoir, autorise les notifications de OneForAll dans les Réglages de l’iPhone.'
+        : 'iOS ne laisse pas OneForAll vérifier en arrière-plan. Dans les Réglages de l’iPhone, active « Actualisation en arrière-plan » (Général, puis pour OneForAll), et coupe le mode Économie d’énergie.',
+      [
+        { text: 'Plus tard', style: 'cancel' },
+        { text: 'Ouvrir les Réglages', onPress: () => Linking.openSettings() },
+      ],
+    );
   }
 
   async function replayOnboarding() {
@@ -87,11 +96,18 @@ export default function SettingsScreen() {
         ))}
 
         <View style={styles.section}>
-          <SectionTitle>Notifications</SectionTitle>
+          <SectionTitle>Messages Instagram</SectionTitle>
           <Card>
             <SwitchRow
-              label="Nouveaux messages Instagram (avec du retard)"
-              description="De temps en temps, ton téléphone demande lui-même à Instagram si tu as des messages non lus, et te prévient. C'est iOS qui décide quand : parfois après 20 minutes, parfois après plusieurs heures. Rien ne passe par un serveur."
+              label="Pastille des messages non lus"
+              description="Sur l'accueil, ton téléphone demande lui-même à Instagram combien de conversations sont non lues, et l'affiche sur la carte. Instagram voit donc quand tu ouvres l'accueil. Rien ne passe par un serveur à nous."
+              value={badge}
+              onValueChange={toggleBadge}
+            />
+            <Separator />
+            <SwitchRow
+              label="Notifications (avec du retard)"
+              description="De temps en temps, ton téléphone demande lui-même à Instagram si une conversation de plus est non lue, et te prévient. C'est iOS qui décide quand : parfois après 20 minutes, parfois après plusieurs heures, et jamais si tu fermes l'app en la balayant vers le haut. Ces demandes automatiques utilisent une adresse non officielle d'Instagram, qui pourrait y voir un robot et te demander une vérification. Rien ne passe par un serveur à nous."
               value={notifications}
               onValueChange={toggleNotifications}
             />
@@ -103,7 +119,7 @@ export default function SettingsScreen() {
           <Card>
             <SwitchRow
               label="Mettre à jour automatiquement"
-              description="Quand Instagram, YouTube ou Facebook changent, les règles corrigées sont téléchargées depuis GitHub (fichiers publics, aucune donnée envoyée). Désactivé : l'app n'utilise que ses règles intégrées et ne contacte personne."
+              description="Quand Instagram, YouTube ou Facebook changent, les règles corrigées sont téléchargées depuis GitHub (fichiers publics, aucune donnée envoyée). Désactivé : l'app n'utilise que ses règles intégrées et ne contacte plus GitHub."
               value={autoUpdate}
               onValueChange={setAutoUpdate}
             />
@@ -221,8 +237,6 @@ const styles = StyleSheet.create({
   container: { paddingTop: 4, paddingHorizontal: 20, gap: 28 },
   title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.68 },
   section: { gap: 10 },
-  label: { fontSize: 17, lineHeight: 22 },
-  description: { fontSize: 13, lineHeight: 18 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 44 },
   status: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   statusIcon: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },

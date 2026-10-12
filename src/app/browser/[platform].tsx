@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useRef } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mark } from '../../components/Mark';
@@ -11,10 +11,6 @@ import { useSettings } from '../../lib/settings';
 import { SITE_TEXT } from '../../lib/sites';
 import { cardShadow, useTheme } from '../../lib/theme';
 import { useUsageTimer } from '../../lib/usage';
-
-/** Largeur des bords qui captent le glissement, et distance à parcourir. */
-const EDGE = 22;
-const THRESHOLD = 50;
 
 const TOUR: TourStep[] = [
   {
@@ -57,7 +53,8 @@ const TOUR: TourStep[] = [
 
 /**
  * Écran qui affiche un réseau social, en plein écran (pas de barre) :
- * - glisser depuis le bord droit = onglet suivant du réseau, depuis le bord gauche = onglet précédent ;
+ * - glisser depuis le bord droit = onglet suivant du réseau, depuis le bord gauche = onglet précédent
+ *   (repéré dans la page, qui envoie « edgeSwipe » à SiteWebView) ;
  * - le bouton rond (le symbole) = retour à OneForAll ;
  * - tirer la page vers le bas = recharger.
  */
@@ -74,18 +71,6 @@ export default function BrowserScreen() {
   const showing = !!platform && loaded && ready;
   // Petit tuto la 1re fois qu'on ouvre un site (une fois le bandeau affiché).
   const tour = useTour('browser', TOUR, showing, 1100);
-
-  // Bords gauche et droit : un glissement vers l'intérieur change d'onglet.
-  const edge = (dir: 1 | -1) =>
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderRelease: (_, g) => {
-        const inward = dir === 1 ? -g.dx : g.dx;
-        if (inward >= THRESHOLD && Math.abs(g.dy) < Math.abs(g.dx)) controls.current?.goTab(dir);
-      },
-    });
-  const left = useMemo(() => edge(-1), []);
-  const right = useMemo(() => edge(1), []);
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
@@ -106,9 +91,9 @@ export default function BrowserScreen() {
         <View style={{ flex: 1 }} />
       )}
 
-      <View {...left.panHandlers} style={[styles.edge, { left: 0, top: insets.top }]} />
-      <View {...right.panHandlers} style={[styles.edge, { right: 0, top: insets.top }]} />
-      {/* Repères du tuto : zones des gestes. */}
+      {/* Repères du tuto : zones des gestes (le glissement depuis un bord est repéré
+          dans la page elle-même, voir buildInjection.ts : les boutons du site au bord
+          de l'écran restent utilisables). */}
       <TourMarker markerRef={tour.target('edge-left')} style={{ left: 0, top: '38%', width: 26, height: 150 }} />
       <TourMarker markerRef={tour.target('edge-right')} style={{ right: 0, top: '38%', width: 26, height: 150 }} />
       <TourMarker markerRef={tour.target('pull')} style={{ left: 16, right: 16, top: insets.top + 8, height: 120 }} />
@@ -133,7 +118,6 @@ export default function BrowserScreen() {
 }
 
 const styles = StyleSheet.create({
-  edge: { position: 'absolute', bottom: 0, width: EDGE },
   home: {
     position: 'absolute',
     right: 12,

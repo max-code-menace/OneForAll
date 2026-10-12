@@ -16,6 +16,8 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/rules/validate.ts` : validation stricte (pas de code, pas de `url()` dans le CSS, redirections
   limitées au même site). Un fichier distant ne peut changer que `rules`, jamais l'adresse ni les domaines.
 - `src/lib/banned.ts` : sites bannis (TikTok), **codés en dur**, non modifiables à distance.
+  `INSIDE_HOSTS` (`src/lib/sites.ts`, en dur aussi) : domaines de connexion gardés dans l'app ; tout autre
+  site (hors réseaux) s'ouvre dans Safari.
 - `src/lib/buildInjection.ts` : script injecté dans les pages (CSS, MutationObserver, redirections, signalement du chemin).
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
@@ -111,8 +113,34 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   `NSHTTPCookieStorage`, utilisé par `fetch`). Nouveaux modules natifs : expo-background-fetch, expo-task-manager,
   expo-notifications (plugin `expo-background-fetch` dans app.json, pas de push donc pas de plugin notifications).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
+- **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
+  - Sécurité des règles téléchargées : libellés/descriptions sans `< > &` et page bloquée construite sans HTML ;
+    CSS sans `\` ni `@` (sauf `@media`), ni `url(`/`image(`/`src(` ; regex sans répétition imbriquée ni
+    référence arrière ; cibles de redirection : seuls `$1`-`$9`, et cible revérifiée APRÈS remplacement
+    (`isSafeTarget` dans urlRules.ts + `safeTarget` dans le script injecté). Nouveau champ de règle `silent`
+    (pas de bandeau ; ignoré sans risque par les anciennes versions) sur `ig.followingFeed`.
+  - Messages page → app : écoutés seulement sur les domaines des réseaux, valeurs vérifiées.
+  - Bords : le glissement est repéré DANS la page (message `edgeSwipe`), plus de zones posées sur la WebView
+    (elles avalaient les appuis des boutons du site au bord de l'écran).
+  - Liens externes → Safari ; écran « Pas de connexion » en français avec « Réessayer » ; le script est figé à
+    l'ouverture du site (plus de rechargement si des règles arrivent pendant qu'on est dessus).
+  - Pastille Instagram **désactivée par défaut** (Réglages → Messages Instagram), PRIVACY.md et textes corrigés
+    (l'app contactait Instagram à chaque accueil alors qu'elle disait « ne contacte personne »).
+  - Notifications : vérifie que l'actualisation en arrière-plan est permise ; chiffre de l'icône mis à jour app
+    ouverte. `expo-background-fetch` est déprécié par Expo : migration vers `expo-background-task` NON faite.
+  - Profil Instagram : la plus petite photo de profil la plus basse (barre du bas), pas celles des stories.
+    YouTube : « Bibliothèque » → « Vous » (`/feed/you`). Stories exclues du blocage de glissement ; le
+    glissement horizontal sur une vidéo n'est plus bloqué.
+  - Accessibilité : cartes de l'accueil lues en entier, interrupteurs lus une fois, bandeau annoncé par VoiceOver,
+    pages de présentation qui défilent en très grand texte.
+  - `npm run test:inject` échoue désormais sans Playwright (sauf `SANS_NAVIGATEUR=1`).
+  - Non corrigé (choix de l'utilisateur ou hors code) : icônes ressemblant aux logos, protection de `main` + 2FA,
+    vulnérabilités npm (outils de dev ; ne JAMAIS lancer `npm audit fix --force`).
 
 ## À faire (par ordre)
+0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
+   Puis build 5 avec les corrections de l'audit, et vérifier sur iPhone : boutons au bord de l'écran, glisser
+   depuis les bords, connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
 1. Retours de test du build 4 (utilisateur et sa sœur) : tuto, onglets au glissement (dont Profil Instagram),
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).

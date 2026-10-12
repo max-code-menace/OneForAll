@@ -6,7 +6,7 @@ import { useRules } from './rules';
 /**
  * Réglages = un booléen par règle (activée / désactivée), sauvegardés sur le
  * téléphone avec AsyncStorage. Si une règle n'a jamais été touchée, on utilise
- * sa valeur par défaut (`defaultEnabled` dans src/rules/*.ts).
+ * sa valeur par défaut (`defaultEnabled` dans src/rules/*.json).
  */
 
 const STORAGE_KEY = 'sans-reels:settings:v1';
