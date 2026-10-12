@@ -8,9 +8,17 @@
  *    vraie (autre identifiant), seulement sur l'iPhone du développeur. Elle reçoit les
  *    modifications de code en quelques minutes, sans nouveau build (EAS Update, canal
  *    « test », envoyé par .github/workflows/test-update.yml à chaque push sur une branche
- *    claude/…). Une modification « native » (nouveau module, autorisation iOS…) change
- *    l'empreinte (runtimeVersion) : la mise à jour ne s'applique pas, il faut refaire l'app de test.
+ *    claude/…).
+ *
+ * ⚠️ TEST_RUNTIME : une mise à jour ne s'installe que sur une app de test qui porte le même
+ * numéro. À CHAQUE modification « native » (nouveau module, autorisation iOS, plugin, version
+ * d'Expo…), augmenter ce numéro (test-2, test-3…) puis refaire l'app de test
+ * (eas build --platform ios --profile test). Sinon une mise à jour pourrait demander du code
+ * natif absent de l'app installée, et la faire planter.
+ * (L'empreinte automatique « fingerprint » faisait échouer le build chez Expo : abandonnée.)
  */
+const TEST_RUNTIME = 'test-1';
+
 module.exports = ({ config }) => {
   const test = process.env.APP_VARIANT === 'test';
   return {
@@ -20,8 +28,8 @@ module.exports = ({ config }) => {
       ...config.ios,
       bundleIdentifier: test ? 'com.maxcodemenace.oneforall.test' : config.ios.bundleIdentifier,
     },
-    // Empreinte du code natif : une mise à jour ne s'installe que sur une app au code natif identique.
-    runtimeVersion: { policy: 'fingerprint' },
+    // Numéro écrit en clair : aucun calcul pendant la fabrication (voir TEST_RUNTIME plus haut).
+    runtimeVersion: test ? TEST_RUNTIME : config.version,
     updates: test
       ? {
           enabled: true,

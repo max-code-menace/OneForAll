@@ -61,13 +61,16 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 - **App de test « OneForAll Test »** (mise en place après la PR 6, demande de l'utilisateur : tester plus vite
   qu'un build + TestFlight à chaque essai). `app.config.js` : avec `APP_VARIANT=test`, autre nom et autre
   identifiant (`com.maxcodemenace.oneforall.test`, installée à côté de la vraie), `expo-updates` activé (canal
-  `test`, `runtimeVersion` = empreinte du code natif). Sans variable (vraie app) : `updates.enabled: false`, la
+  `test`, `runtimeVersion` = `TEST_RUNTIME` en clair, ex. `test-1`). Sans variable (vraie app) : `updates.enabled: false`, la
   vraie app ne contacte jamais Expo. Profil EAS `test` (distribution interne = iPhone enregistré par
   `eas device:create`). `.github/workflows/test-update.yml` : à chaque push sur `claude/**`, typecheck + tests,
   puis `eas update --channel test` (secret `EXPO_TOKEN` requis dans GitHub). `src/lib/testUpdates.ts` : l'app de
   test installe la nouvelle version au lancement et au retour dans l'app ; l'accueil affiche « Version de test du… ».
-  Changement natif (module, autorisation, `eas.json`, `app.json`…) = empreinte différente = refaire l'app de test.
-  **Rien de cela n'a pu être essayé dans la session** (pas d'accès à Expo) : à vérifier au 1er envoi.
+  ⚠️ Changement natif (module, autorisation, plugin, version d'Expo…) : **augmenter `TEST_RUNTIME`** dans
+  app.config.js (`test-2`…) et faire refaire l'app de test. 1er essai (12/10) : 2 builds `test` échoués à l'étape
+  EAS « Configure expo-updates » (« Unknown error », runtime `file:fingerprint`) avec la politique `fingerprint` ;
+  remplacée par un numéro en clair (aucun calcul pendant le build). Cause exacte non vue (logs non fournis).
+  La vraie app utilise `runtimeVersion` = `version` (1.0.0), mises à jour coupées.
   Étapes pour l'utilisateur : (1) `eas device:create` ; (2) créer un jeton sur expo.dev (Account settings →
   Access tokens) et le coller dans GitHub (secret `EXPO_TOKEN`) ; (3) `eas build --platform ios --profile test`.
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
