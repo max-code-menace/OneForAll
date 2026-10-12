@@ -57,8 +57,19 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   Facebook). Envoi à TestFlight à confirmer avec l'utilisateur ; pas encore testé sur iPhone.
 - Invitation de la sœur en cours : groupe de test **externe** + **lien public** TestFlight (revue bêta Apple
   demandée ; textes de « Test Information » fournis). Prochaine étape : activer le lien public et l'envoyer.
-- Branche `claude/beautiful-mayer-mvofmc` (repartie de `main` après la PR 5) : « Fluidité 2 », poussée, demande de
-  fusion à ouvrir par l'utilisateur, puis **build 6** (un seul build pour PR 5 + Fluidité 2).
+- PR 6 (« Fluidité 2 ») fusionnée le 12/10 : **build 6** à lancer par l'utilisateur (PR 5 + Fluidité 2).
+- **App de test « OneForAll Test »** (mise en place après la PR 6, demande de l'utilisateur : tester plus vite
+  qu'un build + TestFlight à chaque essai). `app.config.js` : avec `APP_VARIANT=test`, autre nom et autre
+  identifiant (`com.maxcodemenace.oneforall.test`, installée à côté de la vraie), `expo-updates` activé (canal
+  `test`, `runtimeVersion` = empreinte du code natif). Sans variable (vraie app) : `updates.enabled: false`, la
+  vraie app ne contacte jamais Expo. Profil EAS `test` (distribution interne = iPhone enregistré par
+  `eas device:create`). `.github/workflows/test-update.yml` : à chaque push sur `claude/**`, typecheck + tests,
+  puis `eas update --channel test` (secret `EXPO_TOKEN` requis dans GitHub). `src/lib/testUpdates.ts` : l'app de
+  test installe la nouvelle version au lancement et au retour dans l'app ; l'accueil affiche « Version de test du… ».
+  Changement natif (module, autorisation, `eas.json`, `app.json`…) = empreinte différente = refaire l'app de test.
+  **Rien de cela n'a pu être essayé dans la session** (pas d'accès à Expo) : à vérifier au 1er envoi.
+  Étapes pour l'utilisateur : (1) `eas device:create` ; (2) créer un jeton sur expo.dev (Account settings →
+  Access tokens) et le coller dans GitHub (secret `EXPO_TOKEN`) ; (3) `eas build --platform ios --profile test`.
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).

@@ -1,0 +1,47 @@
+# Envoie le code d'une branche claude/… à l'app « OneForAll Test » (EAS Update, canal « test »),
+# en quelques minutes et sans nouveau build. Ne touche JAMAIS la vraie app (mises à jour coupées).
+# Prérequis (une fois) : secret EXPO_TOKEN dans GitHub → Settings → Secrets and variables → Actions.
+name: Mise à jour de l'app de test
+
+on:
+  push:
+    branches: ['claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-update
+  cancel-in-progress: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      APP_VARIANT: test
+    steps:
+      - name: Clé Expo présente ?
+        if: env.EXPO_TOKEN == ''
+        run: echo "::warning::Secret EXPO_TOKEN absent, rien n'est envoyé à l'app de test."
+      - uses: actions/checkout@v4
+        if: env.EXPO_TOKEN != ''
+      - uses: actions/setup-node@v4
+        if: env.EXPO_TOKEN != ''
+        with:
+          node-version: 22
+          cache: npm
+      - name: Installer
+        if: env.EXPO_TOKEN != ''
+        run: npm ci
+      - name: Vérifier (types et règles)
+        if: env.EXPO_TOKEN != ''
+        run: |
+          npm run typecheck
+          SANS_NAVIGATEUR=1 npm run test:inject
+      - name: Envoyer à l'app de test
+        if: env.EXPO_TOKEN != ''
+        env:
+          MESSAGE: ${{ github.event.head_commit.message || 'Envoi manuel' }}
+        run: npx --yes eas-cli@latest update --channel test --platform ios --non-interactive --message "$(printf '%s' "$MESSAGE" | head -n 1 | cut -c1-200)"

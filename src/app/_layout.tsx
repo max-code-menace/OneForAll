@@ -10,6 +10,7 @@ import { IntroProvider } from '../lib/intro';
 import { OpenSitesProvider, useOpenSites } from '../lib/openSites';
 import { RulesProvider } from '../lib/rules';
 import { SettingsProvider } from '../lib/settings';
+import { useTestUpdates } from '../lib/testUpdates';
 import { useTheme } from '../lib/theme';
 
 /**
@@ -36,6 +37,8 @@ function Navigation() {
   const t = useTheme();
   const { open } = useOpenSites();
   useOpenFromNotification(open);
+  // App de test seulement : installe tout de suite la dernière version envoyée.
+  useTestUpdates();
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
