@@ -1,15 +1,17 @@
-import { useEffect, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Linking, Pressable, Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
+import type { WebViewNavigationEvent } from 'react-native-webview/lib/WebViewTypes';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
 import { syncAppBadge } from '../lib/backgroundCheck';
 import { findBannedSite } from '../lib/banned';
-import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
+import { AFTER_LOAD_SCRIPT, buildInjectedScript, setPageHiddenCommand } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { INSIDE_HOSTS } from '../lib/sites';
 import { useTheme } from '../lib/theme';
+import { parseSiteColor, type SiteColor } from '../lib/siteColor';
 import { saveUnread } from '../lib/unread';
 import { findUrlAction, hostMatches, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
@@ -25,42 +27,84 @@ const SAFARI_APP_NAME = `Version/${String(RNPlatform.Version).split('.').slice(0
 
 type Props = {
   platform: Platform;
-  /** Bandeau affiché 0,5 s après l'ouverture (ex. « Reels masqués »). */
+  /**
+   * Affiché à l'écran ? Le réseau reste ouvert quand on revient à l'accueil : il est
+   * seulement caché (vidéos en pause, la page se croit en arrière-plan).
+   */
+  visible: boolean;
+  /** Bandeau affiché 0,5 s après la 1re apparition (ex. « Reels masqués »). */
   welcome?: string;
   /** Pendant le tuto : le bandeau reste affiché tant que c'est vrai. */
   holdWelcome?: boolean;
   /** Le bandeau, pour que le tuto puisse le montrer. */
   toastRef?: RefObject<View | null>;
+  /** Couleur du haut du site (pour colorer la zone de l'heure et de la batterie). */
+  onSiteColor?: (color: SiteColor) => void;
 };
 
 /**
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props) {
+export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef, onSiteColor }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
   const { platforms } = useRules();
   const toast = useRef<ToastHandle>(null);
-  /** Chemin de la page affichée (mode diagnostic uniquement). */
-  const [path, setPath] = useState('');
+  /** Chemin de la page affichée (gardé dans une ref, affiché en mode diagnostic uniquement). */
+  const pathRef = useRef('');
+  const [path, setPathShown] = useState('');
+  function setPath(p: string) {
+    pathRef.current = p;
+    // Hors diagnostic, rien à afficher : pas de nouveau dessin de l'écran à chaque page.
+    if (diagnostic) setPathShown(p);
+  }
+  /**
+   * Chargements COMPLETS de la page (mode diagnostic) : le 1er est l'ouverture, les
+   * suivants sont des rechargements à traquer. Compté dans une ref (pas de nouveau
+   * dessin de l'écran), affiché seulement en mode diagnostic.
+   */
+  const loads = useRef({ count: 0, last: '' });
+  const [loadsShown, setLoadsShown] = useState(loads.current);
+  /** Cause connue du prochain chargement (une redirection décidée par l'app…). */
+  const nextCause = useRef<string | null>(null);
+  // Mode diagnostic activé pendant que le site reste ouvert : on affiche l'état actuel.
+  useEffect(() => {
+    if (!diagnostic) return;
+    setPathShown(pathRef.current);
+    setLoadsShown(loads.current);
+  }, [diagnostic]);
   /** Augmente à chaque « Réessayer » : la WebView repart de zéro. */
   const [attempt, setAttempt] = useState(0);
 
-  // Script construit une fois, à l'ouverture du site : si des règles plus récentes
-  // arrivent pendant qu'on est sur la page, elles s'appliqueront à la prochaine
-  // ouverture (sinon la page se rechargerait d'un coup, et un message en cours serait perdu).
-  const [script] = useState(() => buildInjectedScript(platforms, isEnabled));
+  // Le script est figé à la création de la page : des règles qui changent pendant qu'on est
+  // dessus ne la rechargent pas d'un coup (un message en cours serait perdu). Elles sont
+  // appliquées quand le réseau est caché (un rechargement en arrière-plan), voir plus bas.
+  const fresh = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
+  const [script, setScript] = useState(fresh);
+  // Adresse de départ déjà redirigée (ex. Instagram : directement le fil Abonnements) : sinon
+  // la 1re page est annulée puis relancée à la bonne adresse, une étape d'attente pour rien.
+  const startUrl = () => {
+    const a = findUrlAction(platforms, platform.startUrl, isEnabled);
+    return a?.type === 'redirect' ? a.url : platform.startUrl;
+  };
+  const [startUri, setStartUri] = useState(startUrl);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
   // Domaines des réseaux (les liens entre réseaux restent dans l'app, filtrés).
   const allHosts = platforms.flatMap((p) => p.hosts);
 
-  // À l'ouverture : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
+  // À la 1re apparition : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
+  // Pas à chaque retour : le réseau est resté ouvert, rien n'a changé.
+  const welcomed = useRef(false);
   useEffect(() => {
-    if (welcome) toast.current?.show(welcome, 500, holdWelcome ? Infinity : 2500);
-    // Seulement à l'ouverture ; la fin du tuto est gérée juste en dessous.
+    if (!visible || welcomed.current || !welcome) return;
+    welcomed.current = true;
+    toast.current?.show(welcome, 500, holdWelcome ? Infinity : 2500);
+    // Seulement à la 1re apparition ; la fin du tuto est gérée juste en dessous.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [welcome]);
+  }, [visible, welcome]);
   const wasHolding = useRef(holdWelcome);
   useEffect(() => {
     if (holdWelcome && welcome) toast.current?.show(welcome, 0, Infinity);
@@ -70,8 +114,45 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdWelcome]);
 
+  /** iOS a fermé la page cachée (mémoire) : rechargée quand on la réaffiche. */
+  const killedWhileHidden = useRef(false);
+
+  // Caché / réaffiché : on prévient la page (veille, vidéos en pause).
+  useEffect(() => {
+    webRef.current?.injectJavaScript(setPageHiddenCommand(!visible));
+    if (visible && killedWhileHidden.current) {
+      killedWhileHidden.current = false;
+      webRef.current?.reload();
+    }
+  }, [visible]);
+
+  // Règles changées (Réglages, mise à jour) : appliquées dès que le réseau est caché,
+  // par un rechargement en arrière-plan (jamais sous les yeux de l'utilisateur).
+  useEffect(() => {
+    if (fresh === script || visible) return;
+    const timer = setTimeout(() => {
+      nextCause.current = 'règles changées';
+      setScript(fresh);
+      setStartUri(startUrl());
+      setAttempt((n) => n + 1);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [fresh, script, visible]);
+
+  /**
+   * iOS a fermé la page pour libérer de la mémoire (fréquent après un long moment en
+   * arrière-plan) : sans rien faire, elle resterait blanche. On la recharge, tout de
+   * suite si elle est affichée, sinon au moment où on la réaffiche.
+   */
+  function onContentProcessDidTerminate() {
+    nextCause.current = 'page fermée par iOS';
+    if (visibleRef.current) webRef.current?.reload();
+    else killedWhileHidden.current = true;
+  }
+
   function showBanner(text: string) {
-    toast.current?.show(text);
+    // Page cachée : pas de bandeau (il apparaîtrait sur l'accueil).
+    if (visibleRef.current) toast.current?.show(text);
   }
 
   /** Appelé AVANT chaque chargement de page : on bloque/redirige si besoin. */
@@ -102,6 +183,7 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
       showBanner('Page bloquée');
     } else {
       if (!action.rule.silent) showBanner(action.rule.label);
+      nextCause.current = 'redirection OneForAll';
       webRef.current?.injectJavaScript(`location.replace(${JSON.stringify(action.url)}); true;`);
     }
     return false;
@@ -135,6 +217,11 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
       case 'path':
         if (typeof m.path === 'string') setPath(m.path.slice(0, 300));
         break;
+      case 'reloading':
+        // Le script recharge la page lui-même : redirection pendant le chargement, ou
+        // redirection douce à laquelle le site n'a pas réagi.
+        if (onThisSite) nextCause.current = m.why === 'early' ? 'redirection au chargement' : 'redirection douce ratée';
+        break;
       case 'unread':
         if (onThisSite && Number.isInteger(m.count) && (m.count as number) >= 0 && (m.count as number) < 10000) {
           const count = m.count as number;
@@ -142,6 +229,11 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
           if (platform.id === 'instagram') syncAppBadge(count);
         }
         break;
+      case 'theme': {
+        const color = onThisSite ? parseSiteColor(m.color) : null;
+        if (color) onSiteColor?.(color);
+        break;
+      }
       case 'feedLocked':
         showBanner('Les vidéos suivantes sont bloquées');
         break;
@@ -153,6 +245,23 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
     if (u) setPath(u.path);
   }
 
+  /** Début d'un chargement complet de la page (pas les changements de page internes du site). */
+  function onLoadStart(e: WebViewNavigationEvent) {
+    const n = loads.current.count + 1;
+    const cause =
+      n === 1
+        ? 'ouverture'
+        : nextCause.current ??
+          ({ reload: 'rechargement', click: 'lien', backforward: 'retour', formsubmit: 'formulaire' } as Record<string, string>)[
+            e.nativeEvent.navigationType
+          ] ??
+          'navigation';
+    nextCause.current = null;
+    const u = parseUrl(e.nativeEvent.url);
+    loads.current = { count: n, last: u ? `${cause} (${u.path.slice(0, 60)})` : cause };
+    if (diagnostic) setLoadsShown(loads.current);
+  }
+
   return (
     <View style={styles.flex}>
       <WebView
@@ -160,7 +269,7 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         key={attempt}
         ref={webRef}
         style={styles.flex}
-        source={{ uri: platform.startUrl }}
+        source={{ uri: startUri }}
         // Plateformes qui refusent les WebView (Google, Facebook) : on se présente comme Safari.
         applicationNameForUserAgent={platform.userAgent ? SAFARI_APP_NAME : undefined}
         // --- Rester connecté -----------------------------------------------
@@ -177,10 +286,22 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         // --- Blocage des URLs ----------------------------------------------
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
+        onLoadStart={onLoadStart}
+        // Page cachée : à chaque nouvelle page chargée, on lui redit qu'elle est en arrière-plan.
+        onLoadEnd={() => {
+          if (!visibleRef.current) webRef.current?.injectJavaScript(setPageHiddenCommand(true));
+        }}
+        onContentProcessDidTerminate={onContentProcessDidTerminate}
         // --- Confort -------------------------------------------------------
         // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
+        // Vidéos qui démarrent seules (sans le son), comme dans la vraie app (choix de l'utilisateur).
+        // Sinon une vidéo YouTube ouverte peut demander un 2e appui sur Lecture.
+        mediaPlaybackRequiresUserAction={false}
+        // Appui long sur un lien : pas d'aperçu à la Safari (pas comme une app, et l'aperçu
+        // charge la page à part, peut-être sans nos blocages).
+        allowsLinkPreview={false}
         // Tirer la page vers le bas = recharger.
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
@@ -205,6 +326,9 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
           <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
             Page : {path || '…'}
+          </Text>
+          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+            Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
           </Text>
         </View>
       )}

@@ -13,9 +13,12 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante.
  *
  * Fluidité : les redirections se font si possible SANS recharger la page (comme le
- * site lui-même, voir softGo), le nettoyage cherche chaque sélecteur une seule fois,
- * et aucun écouteur de geste n'est posé sur toute la page (ce qui ferait attendre
- * le script à chaque défilement) : seulement sur une vidéo plein écran.
+ * site lui-même, voir softGo), juste après la navigation du site (pas pendant) ; le
+ * nettoyage ne relit que ce qui vient d'apparaître (la page entière au plus toutes les
+ * 2 s), cherche chaque sélecteur une seule fois, et mesure les vidéos au moment où le
+ * navigateur calcule déjà la mise en page ; aucun écouteur de geste n'est posé sur
+ * toute la page (ce qui ferait attendre le script à chaque défilement) : seulement
+ * sur une vidéo plein écran.
  *
  * Sécurité : les règles viennent d'un fichier téléchargé. Aucun de leurs textes
  * n'est inséré comme du HTML, et chaque redirection est revérifiée après
@@ -57,8 +60,64 @@ export function buildInjectedScript(
   platforms: Platform[],
   isEnabled: (ruleId: string) => boolean,
 ): string {
-  return RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
+  return PAGE_HIDDEN_SCRIPT + RUNTIME.replace('__CONFIG__', () => JSON.stringify(buildConfig(platforms, isEnabled)));
 }
+
+/**
+ * Commande envoyée à la page quand l'app la cache (retour à l'accueil) ou la réaffiche.
+ * Le réseau reste ouvert en arrière-plan : voir PAGE_HIDDEN_SCRIPT.
+ */
+export function setPageHiddenCommand(hidden: boolean): string {
+  return `window.__ONEFORALL_HIDDEN__ && window.__ONEFORALL_HIDDEN__(${hidden ? 'true' : 'false'}); true;`;
+}
+
+/**
+ * Page cachée par l'app (réseau gardé ouvert pendant qu'on est sur l'accueil).
+ * iOS, lui, croit qu'elle est encore à l'écran. On fait donc croire au SITE qu'il
+ * est en arrière-plan, comme un onglet de Safari qu'on quitte :
+ *  - document.visibilityState = 'hidden', document.hidden = true, hasFocus() = false,
+ *    puis les événements visibilitychange et blur. Les sites s'en servent pour se
+ *    mettre en veille, et pour ne pas marquer « Vu » un message arrivé pendant
+ *    qu'on n'est pas là (supposé : on ne voit pas leur code) ;
+ *  - vidéos et sons en pause, et toute lecture qui démarre est arrêtée aussitôt.
+ * Posé sur toutes les pages (même sans règles) ; ne change rien tant que l'app n'a pas caché la page.
+ */
+const PAGE_HIDDEN_SCRIPT = `
+(function () {
+  if (window.__ONEFORALL_HIDDEN__) return;
+  var hidden = false;
+  var proto = window.Document && Document.prototype;
+  function real(name) {
+    var d = proto && Object.getOwnPropertyDescriptor(proto, name);
+    return d && d.get ? function () { return d.get.call(document); } : null;
+  }
+  var realState = real('visibilityState'), realHidden = real('hidden');
+  try {
+    if (realState) Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return hidden ? 'hidden' : realState(); } });
+    if (realHidden) Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return hidden || realHidden(); } });
+    var realFocus = document.hasFocus;
+    if (realFocus) document.hasFocus = function () { return !hidden && realFocus.call(document); };
+  } catch (e) {}
+  function pauseAll() {
+    var media = document.querySelectorAll('video, audio');
+    for (var i = 0; i < media.length; i++) { try { media[i].pause(); } catch (e) {} }
+  }
+  // Pendant que la page est cachée, une vidéo qui démarre (lecture auto…) est arrêtée.
+  document.addEventListener('play', function (e) {
+    if (hidden && e.target && e.target.pause) { try { e.target.pause(); } catch (err) {} }
+  }, true);
+  window.__ONEFORALL_HIDDEN__ = function (h) {
+    h = !!h;
+    if (h === hidden) return;
+    hidden = h;
+    if (h) pauseAll();
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event(h ? 'blur' : 'focus'));
+    } catch (e) {}
+  };
+})();
+`;
 
 /**
  * Script pour `injectedJavaScript` (après chargement) : relance un nettoyage
@@ -183,6 +242,7 @@ const RUNTIME = `
   function softGo(target, replace) {
     if (document.readyState === 'loading' || !document.body || typeof PopStateEvent !== 'function') {
       leaving = true;
+      post({ type: 'reloading', why: 'early' }); // compteur du mode diagnostic
       if (replace) location.replace(target); else location.assign(target);
       return;
     }
@@ -199,6 +259,7 @@ const RUNTIME = `
     } catch (e) {
       watch.disconnect();
       leaving = true;
+      post({ type: 'reloading', why: 'stuck' });
       location.assign(target);
       return;
     }
@@ -206,7 +267,11 @@ const RUNTIME = `
     setTimeout(function () {
       watch.disconnect();
       // Rechargement seulement si on est toujours sur cette adresse (l'utilisateur a pu repartir).
-      if (!reacted && location.href === expected) { leaving = true; location.reload(); }
+      if (!reacted && location.href === expected) {
+        leaving = true;
+        post({ type: 'reloading', why: 'stuck' });
+        location.reload();
+      }
     }, 800);
   }
 
@@ -250,11 +315,45 @@ const RUNTIME = `
     return t;
   }
 
-  function clean() {
+  // Éléments qui correspondent au sélecteur : dans toute la page (roots = null), ou
+  // seulement dans les morceaux qui viennent d'apparaître (roots = liste d'éléments).
+  // Un sélecteur comme « article span » reste juste : matches() et querySelectorAll()
+  // tiennent compte des ancêtres, même hors du morceau.
+  function find(sel, roots) {
+    if (!roots) return document.querySelectorAll(sel);
+    var out = [];
+    for (var i = 0; i < roots.length; i++) {
+      var r = roots[i];
+      if (r.matches(sel)) out.push(r);
+      var sub = r.querySelectorAll(sel);
+      for (var j = 0; j < sub.length; j++) out.push(sub[j]);
+    }
+    return out;
+  }
+
+  // Ne garde que les morceaux encore dans la page, et pas ceux déjà contenus dans un autre.
+  var stamp = 0;
+  function topRoots(list) {
+    stamp++;
+    var keep = [];
+    for (var i = 0; i < list.length; i++) if (list[i].isConnected) list[i].__sansReels = stamp;
+    for (var j = 0; j < list.length; j++) {
+      var el = list[j];
+      if (el.__sansReels !== stamp) continue;
+      var inside = false;
+      for (var p = el.parentElement; p; p = p.parentElement) {
+        if (p.__sansReels === stamp) { inside = true; break; }
+      }
+      if (!inside) { keep.push(el); el.__sansReels = -1; } // -1 : pas compté deux fois
+    }
+    return keep;
+  }
+
+  function clean(roots) {
     addStyle();
     for (var i = 0; i < hideSels.length; i++) {
       var rules = hideBySel[hideSels[i]], list;
-      try { list = document.querySelectorAll(hideSels[i]); } catch (e) { continue; }
+      try { list = find(hideSels[i], roots); } catch (e) { continue; }
       for (var j = 0; j < list.length; j++) {
         var el = list[j], txt = null;
         for (var q = 0; q < rules.length; q++) {
@@ -281,7 +380,7 @@ const RUNTIME = `
     }
     for (var k = 0; k < rewrite.length; k++) {
       var links;
-      try { links = document.querySelectorAll(rewrite[k].selector); } catch (e) { continue; }
+      try { links = find(rewrite[k].selector, roots); } catch (e) { continue; }
       for (var m = 0; m < links.length; m++) {
         if (links[m].getAttribute('data-sans-reels-href') === rewrite[k].href) continue; // déjà fait
         links[m].setAttribute('href', rewrite[k].href);
@@ -308,23 +407,82 @@ const RUNTIME = `
     post({ type: 'unread', count: n });
   }
 
-  function run() {
+  // Couleur du haut de la page (barre du site), pour que l'app colore la zone de l'heure
+  // et de la batterie pareil : la couleur « theme-color » du site, sinon le fond de la page.
+  // Lue au plus une fois par relecture complète (navigation, ≤ 2 s), envoyée si elle change.
+  var lastTheme = '';
+  function reportTheme() {
+    var color = '';
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    for (var i = 0; i < metas.length && !color; i++) {
+      var media = metas[i].getAttribute('media');
+      if (!media || (window.matchMedia && window.matchMedia(media).matches)) color = metas[i].getAttribute('content') || '';
+    }
+    if (!color && document.body) {
+      color = getComputedStyle(document.body).backgroundColor;
+      if (/^rgba\(.*,\s*0\)$|^transparent$/.test(color)) color = getComputedStyle(document.documentElement).backgroundColor;
+    }
+    color = String(color).slice(0, 40);
+    if (!color || color === lastTheme) return;
+    lastTheme = color;
+    post({ type: 'theme', color: color });
+  }
+
+  // roots absent : toute la page (navigation, chargement). Sinon : seulement ces morceaux.
+  var lastFull = 0, themeQueued = false;
+  function run(roots) {
     reportPath();
     reportUnread();
     if (!checkUrl()) {
-      clean();
-      if (armVideos) armVideos();
-      if (checkFeedEnd) checkFeedEnd();
+      if (!roots) { lastFull = Date.now(); themeQueued = true; }
+      clean(roots || null);
+      afterLayout();
     }
   }
   var armVideos = null; // défini plus bas si le blocage du glissement est actif
   var checkFeedEnd = null; // défini plus bas si « Tu as tout vu » est actif
 
-  // Regroupe les nombreux changements de la page en un seul nettoyage.
-  var timer = null;
-  function schedule() {
+  // Mesures (taille des vidéos, position du fil) au moment où le navigateur calcule
+  // de toute façon la mise en page, juste avant d'afficher : jamais de calcul forcé en plus.
+  var frameQueued = false;
+  function afterLayout() {
+    if (frameQueued || (!armVideos && !checkFeedEnd && !themeQueued)) return;
+    frameQueued = true;
+    requestAnimationFrame(function () {
+      frameQueued = false;
+      if (themeQueued) { themeQueued = false; reportTheme(); }
+      if (armVideos) armVideos();
+      if (checkFeedEnd) checkFeedEnd();
+    });
+  }
+
+  // Regroupe les nombreux changements de la page en un seul nettoyage, limité à ce qui
+  // vient d'apparaître (avant : toute la page relue jusqu'à 8 fois par seconde, ce qui
+  // coûtait cher sur un long fil). Filet de sécurité : la page entière est relue au plus
+  // toutes les 2 s tant qu'elle change (un texte modifié à l'intérieur d'un élément…).
+  var FULL_EVERY = 2000, MAX_PENDING = 400;
+  var timer = null, pending = [], pendingAll = false;
+  function onMutations(list) {
+    if (!pendingAll) {
+      for (var i = 0; i < list.length; i++) {
+        var added = list[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          // Texte ajouté : c'est son élément parent qui a changé.
+          pending.push(added[j].nodeType === 1 ? added[j] : list[i].target);
+        }
+      }
+      if (pending.length > MAX_PENDING) { pendingAll = true; pending = []; }
+    }
     if (timer) return;
-    timer = setTimeout(function () { timer = null; run(); }, 120);
+    timer = setTimeout(function () {
+      timer = null;
+      var all = pendingAll || Date.now() - lastFull > FULL_EVERY;
+      var roots = all ? null : topRoots(pending);
+      pending = [];
+      pendingAll = false;
+      if (roots && !roots.length) return;
+      run(roots);
+    }, 120);
   }
 
   // --- 4. Surveillance ------------------------------------------------------
@@ -333,11 +491,20 @@ const RUNTIME = `
     var original = history[name];
     history[name] = function () {
       var result = original.apply(this, arguments);
-      run();
+      // Juste APRÈS la navigation du site (micro-tâche) : une redirection lancée pendant
+      // qu'il change lui-même de page pouvait passer inaperçue de son routeur, et finir
+      // en rechargement complet. Toujours avant l'affichage de la page interdite.
+      afterSite();
       return result;
     };
   });
-  window.addEventListener('popstate', run);
+  var afterQueued = false;
+  function afterSite() {
+    if (afterQueued) return;
+    afterQueued = true;
+    Promise.resolve().then(function () { afterQueued = false; run(); });
+  }
+  window.addEventListener('popstate', function () { run(); });
 
   // b) Clic sur un lien interdit ou réécrit : on intercepte avant le site.
   document.addEventListener('click', function (e) {
@@ -355,7 +522,7 @@ const RUNTIME = `
 
   // c) Contenu ajouté dynamiquement (scroll infini, changement d'onglet…).
   //    On observe document (et pas <html>, qui peut ne pas encore exister).
-  new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
+  new MutationObserver(onMutations).observe(document, { childList: true, subtree: true });
 
   // --- 5. Vidéos plein écran : pas de glissement vers la suivante ------------
   // Instagram ouvre un Reel reçu en message PAR-DESSUS la conversation, sans
@@ -518,12 +685,22 @@ const RUNTIME = `
   // d) Filet de sécurité si une navigation nous échappe.
   var lastHref = location.href;
   setInterval(function () {
+    if (document.hidden) return; // page cachée : rien à vérifier (relancé au retour, ci-dessous)
     if (location.href !== lastHref) { lastHref = location.href; run(); }
   }, 500);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) run(); });
 
-  window.__SANS_REELS__ = { run: run };
+  // Mode sombre de l'iPhone changé : le site change de couleur, la zone du haut aussi.
+  try {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () {
+      themeQueued = true;
+      afterLayout();
+    });
+  } catch (e) {}
+
+  window.__SANS_REELS__ = { run: function () { run(); } };
   run();
-  document.addEventListener('DOMContentLoaded', run);
+  document.addEventListener('DOMContentLoaded', function () { run(); });
 })();
 true;
 `;

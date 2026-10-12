@@ -8,4 +8,4 @@ export async function setNotificationsEnabled(_enabled: boolean): Promise<Notifi
   return 'background-off';
 }
 export async function syncAppBadge(_count: number): Promise<void> {}
-export function useOpenFromNotification() {}
+export function useOpenFromNotification(_open: (id: 'instagram') => void) {}

@@ -3,24 +3,29 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 
 import { Intro } from '../components/Intro';
+import { SitesLayer } from '../components/SitesLayer';
 // Définit la tâche de fond (iOS peut réveiller l'app juste pour elle).
 import { useOpenFromNotification } from '../lib/backgroundCheck';
 import { IntroProvider } from '../lib/intro';
+import { OpenSitesProvider, useOpenSites } from '../lib/openSites';
 import { RulesProvider } from '../lib/rules';
 import { SettingsProvider } from '../lib/settings';
 import { useTheme } from '../lib/theme';
 
 /**
- * Navigation principale : une pile d'écrans (Accueil → Site / Réglages → À propos).
+ * Navigation principale : une pile d'écrans (Accueil → Réglages → À propos).
  * Chaque écran dessine son propre en-tête (design OneForAll) ; la poussée reste celle d'iOS.
- * Par-dessus : l'animation de lancement et la présentation.
+ * Par-dessus : les réseaux (gardés ouverts en arrière-plan, voir SitesLayer), puis
+ * l'animation de lancement et la présentation.
  */
 export default function RootLayout() {
   return (
     <RulesProvider>
       <SettingsProvider>
         <IntroProvider>
-          <Navigation />
+          <OpenSitesProvider>
+            <Navigation />
+          </OpenSitesProvider>
         </IntroProvider>
       </SettingsProvider>
     </RulesProvider>
@@ -29,7 +34,8 @@ export default function RootLayout() {
 
 function Navigation() {
   const t = useTheme();
-  useOpenFromNotification();
+  const { open } = useOpenSites();
+  useOpenFromNotification(open);
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.dark ? 'light' : 'dark'} />
@@ -37,12 +43,9 @@ function Navigation() {
         <Stack.Screen name="index" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="about" />
-        <Stack.Screen
-          name="browser/[platform]"
-          // Dans un site, pas de glissement gauche/droite : seul le bouton rond ramène à l'accueil.
-          options={{ gestureEnabled: false }}
-        />
       </Stack>
+      {/* Dans un site, pas de glissement gauche/droite : seul le bouton rond ramène à l'accueil. */}
+      <SitesLayer />
       <Intro />
     </View>
   );

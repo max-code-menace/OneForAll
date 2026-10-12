@@ -77,6 +77,16 @@ function urlTests() {
     assert.equal(isSafeTarget(t), false, t);
   }
 
+  // Couleur envoyée par la page : seuls trois nombres sont gardés, le reste est refusé.
+  const { parseSiteColor } = require('../src/lib/siteColor.ts');
+  assert.deepEqual(parseSiteColor('#fff'), { css: 'rgb(255, 255, 255)', dark: false });
+  assert.deepEqual(parseSiteColor('#000000'), { css: 'rgb(0, 0, 0)', dark: true });
+  assert.deepEqual(parseSiteColor('rgb(15, 15, 15)'), { css: 'rgb(15, 15, 15)', dark: true });
+  assert.deepEqual(parseSiteColor('rgba(255, 255, 255, 0.98)'), { css: 'rgb(255, 255, 255)', dark: false });
+  for (const bad of ['rgba(0, 0, 0, 0)', 'transparent', 'red', 'rgb(300, 0, 0)', 'url(x)', '#12345', 12, null, 'x'.repeat(50)]) {
+    assert.equal(parseSiteColor(bad), null, String(bad));
+  }
+
   // TikTok est banni, partout, y compris via les liens courts. Les noms qui y ressemblent ne le sont pas.
   const banned = (u) => findBannedSite(u);
   for (const u of [
@@ -244,6 +254,39 @@ async function browserTests() {
   });
   await page.waitForTimeout(300);
   assert.equal(await hidden(page, '#late'), true, 'Reel chargé dynamiquement masqué');
+  // Seul ce qui vient d'apparaître est relu : un texte « Sponsorisé » ajouté DANS une
+  // publication déjà là est vu tout de suite…
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'adLater';
+    a.innerHTML = '<span>Martin</span>';
+    document.getElementById('main').appendChild(a);
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#adLater'), false, 'publication normale visible');
+  await page.evaluate(() => {
+    const s = document.createElement('span');
+    s.textContent = 'Sponsorisé';
+    document.getElementById('adLater').appendChild(s);
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#adLater'), true, 'pub ajoutée dans une publication existante masquée');
+  // …et un texte changé à l'intérieur d'un élément l'est par la relecture complète (≤ 2 s).
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'adText';
+    a.innerHTML = '<span><b>Spon</b></span>';
+    document.getElementById('main').appendChild(a);
+  });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => document.querySelector('#adText b').appendChild(document.createTextNode('sorisé')));
+  await page.waitForTimeout(150);
+  for (let i = 0; i < 25 && !(await hidden(page, '#adText')); i++) {
+    // la page continue de changer (fil qui se charge) : la relecture complète finit par passer
+    await page.evaluate(() => document.getElementById('main').appendChild(document.createElement('div')));
+    await page.waitForTimeout(150);
+  }
+  assert.equal(await hidden(page, '#adText'), true, 'texte changé dans un élément : masqué par la relecture complète');
 
   // Navigation interne (pushState) vers /reels/ => retour accueil.
   await page.evaluate(() => history.pushState({}, '', '/reels/'));
@@ -478,6 +521,9 @@ async function browserTests() {
   async function openSpa(withRouter) {
     const p = await browser.newPage();
     let loads = 0;
+    // Messages à l'app, gardés même si la page se recharge.
+    const sent = [];
+    await p.exposeFunction('__report', (m) => sent.push(JSON.parse(m)));
     await p.route('**/*', (route) => {
       loads++;
       route.fulfill({ contentType: 'text/html', body: `<html><head></head><body>
@@ -488,12 +534,17 @@ async function browserTests() {
     });
     await p.addInitScript(() => {
       window.__msgs = [];
-      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+      window.ReactNativeWebView = {
+        postMessage: (m) => {
+          window.__msgs.push(JSON.parse(m));
+          window.__report(m);
+        },
+      };
     });
     await p.addInitScript(buildInjectedScript(PLATFORMS, defaults));
     await p.goto('https://www.instagram.com/p/AAA/');
     await p.waitForTimeout(250);
-    return { p, loads: () => loads };
+    return { p, loads: () => loads, sent };
   }
   let spa = await openSpa(true);
   await spa.p.click('#exploreLink');
@@ -504,6 +555,7 @@ async function browserTests() {
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
   assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
+  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
   await spa.p.close();
   // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
   spa = await openSpa(false);
@@ -511,6 +563,8 @@ async function browserTests() {
   await spa.p.waitForTimeout(1500);
   assert.equal(pathOf(spa.p), '/explore/search/', 'sans routeur : bonne adresse');
   assert.equal(spa.loads(), 2, 'sans routeur : page rechargée une fois');
+  // Le compteur du mode diagnostic connaît la cause de ce rechargement.
+  assert.deepEqual(spa.sent.filter((m) => m.type === 'reloading'), [{ type: 'reloading', why: 'stuck' }], 'rechargement signalé');
   await spa.p.close();
 
   // Défilement fluide : aucun écouteur qui bloque le défilement sur la page elle-même.
@@ -522,6 +576,64 @@ async function browserTests() {
   await swipe(page, 200, 140, 20);
   assert.ok((await scrollTop(page, '#feed')) > 0, 'le fil hors vidéo défile normalement');
   await page.close();
+
+  // --- Réseau gardé ouvert mais caché (retour à l'accueil) : la page se croit en arrière-plan ---
+  page = await open('https://www.instagram.com/p/AAA/');
+  const vis = await page.evaluate(async () => {
+    const out = {};
+    let events = 0;
+    document.addEventListener('visibilitychange', () => events++);
+    const v = document.createElement('video');
+    let paused = 0;
+    v.pause = () => paused++; // pas de vrai fichier vidéo : on compte les mises en pause
+    document.body.appendChild(v);
+    out.before = [document.visibilityState, document.hidden];
+    window.__ONEFORALL_HIDDEN__(true);
+    out.hidden = [document.visibilityState, document.hidden, document.hasFocus()];
+    out.pausedOnHide = paused;
+    v.dispatchEvent(new Event('play')); // lecture auto pendant que c'est caché
+    out.pausedOnPlay = paused;
+    window.__ONEFORALL_HIDDEN__(true); // répété : rien de plus
+    window.__ONEFORALL_HIDDEN__(false);
+    out.shown = [document.visibilityState, document.hidden];
+    v.dispatchEvent(new Event('play'));
+    out.pausedAfter = paused;
+    out.events = events;
+    return out;
+  });
+  assert.deepEqual(vis.before, ['visible', false], 'visible au départ');
+  assert.deepEqual(vis.hidden, ['hidden', true, false], 'caché : la page se croit en arrière-plan');
+  assert.equal(vis.pausedOnHide, 1, 'vidéo en pause quand on cache');
+  assert.equal(vis.pausedOnPlay, 2, 'lecture arrêtée pendant que c’est caché');
+  assert.deepEqual(vis.shown, ['visible', false], 'réaffiché : de nouveau visible');
+  assert.equal(vis.pausedAfter, 2, 'réaffiché : la lecture n’est plus arrêtée');
+  assert.equal(vis.events, 2, 'le site est prévenu (visibilitychange) à chaque changement');
+  await page.close();
+  // La commande envoyée par l'app ne casse pas une page où le script est absent.
+  const { setPageHiddenCommand } = require('../src/lib/buildInjection.ts');
+  const bare = await browser.newPage();
+  await bare.setContent('<p>x</p>');
+  await bare.evaluate(setPageHiddenCommand(true));
+  await bare.close();
+
+  // --- Couleur du haut du site (zone de l'heure) : envoyée à l'app, puis vérifiée par elle ---
+  for (const [head, want] of [
+    ['<meta name="theme-color" content="#000000">', '#000000'],
+    ['<style>body{background:rgb(250, 250, 250)}</style>', 'rgb(250, 250, 250)'],
+  ]) {
+    const tp = await browser.newPage();
+    await tp.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head>${head}</head><body>x</body></html>` }));
+    await tp.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await tp.addInitScript(buildInjectedScript(PLATFORMS, defaults));
+    await tp.goto('https://www.instagram.com/p/AAA/');
+    await tp.waitForTimeout(300);
+    const themes = (await tp.evaluate(() => window.__msgs)).filter((m) => m.type === 'theme').map((m) => m.color);
+    assert.equal(themes[themes.length - 1], want, `couleur du site : ${themes}`);
+    await tp.close();
+  }
 
   // --- YouTube ---
   page = await open('https://m.youtube.com/');

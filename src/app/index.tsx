@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,6 +7,7 @@ import { Mark } from '../components/Mark';
 import { useTour, type TourStep } from '../components/Tour';
 import { PressScale, SiteIcon, Wordmark } from '../components/ui';
 import { useIntro } from '../lib/intro';
+import { useOpenSites } from '../lib/openSites';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
@@ -47,25 +48,35 @@ export default function HomeScreen() {
   const [usage, setUsage] = useState<Record<string, number>>({});
   /** Messages non lus par réseau (pastille, seulement si activée dans les Réglages). */
   const [unread, setUnread] = useState<Record<string, number>>({});
-  useFocusEffect(
-    useCallback(() => {
-      readUsage().then(setUsage);
-      isBadgeEnabled().then((on) => {
-        if (!on) {
-          // Pastille désactivée : rien n'est affiché et Instagram n'est pas contacté.
-          setUnread({});
-          return;
-        }
-        readUnread().then(setUnread);
-        // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
-        fetchInstagramUnread().then((n) => {
-          if (n === null) return;
-          saveUnread('instagram', n).then(setUnread);
-          syncAppBadge(n);
-        });
+  const { active, open } = useOpenSites();
+  const refresh = useCallback(() => {
+    readUsage().then(setUsage);
+    isBadgeEnabled().then((on) => {
+      if (!on) {
+        // Pastille désactivée : rien n'est affiché et Instagram n'est pas contacté.
+        setUnread({});
+        return;
+      }
+      readUnread().then(setUnread);
+      // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
+      fetchInstagramUnread().then((n) => {
+        if (n === null) return;
+        saveUnread('instagram', n).then(setUnread);
+        syncAppBadge(n);
       });
-    }, []),
-  );
+    });
+  }, []);
+  // Retour des Réglages…
+  useFocusEffect(refresh);
+  // …et retour d'un réseau (il s'affiche par-dessus l'accueil, qui ne perd donc pas le focus).
+  const [wasOnSite, setWasOnSite] = useState(false);
+  useEffect(() => {
+    if (active) setWasOnSite(true);
+    else if (wasOnSite) {
+      setWasOnSite(false);
+      refresh();
+    }
+  }, [active, wasOnSite, refresh]);
 
   return (
     <ScrollView
@@ -102,7 +113,7 @@ export default function HomeScreen() {
               ]
                 .filter(Boolean)
                 .join(', ')}
-              onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
+              onPress={() => open(p.id)}
               style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
               pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
             >

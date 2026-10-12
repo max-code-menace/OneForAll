@@ -70,6 +70,23 @@ function Splash({
     const fade = (v: Animated.Value, toValue: number, duration: number) =>
       Animated.timing(v, { toValue, duration, useNativeDriver: true }).start();
 
+    // Lancements suivants (présentation déjà vue) : pas d'attente. Le symbole s'affiche
+    // d'un coup et s'efface aussitôt (≈ 0,4 s au lieu de 2,65 s).
+    if (!toOnboarding) {
+      center.setValue(1);
+      dots.forEach((d, i) => {
+        d.setValue(1);
+        dotsOpacity[i].setValue(1);
+      });
+      later(150, () => {
+        fade(bg, 0, 250);
+        fade(markOpacity, 0, 250);
+      });
+      later(400, onDone);
+      return () => timers.forEach(clearTimeout);
+    }
+
+    // Premier lancement : l'animation complète, qui mène à la présentation.
     // 1. Le point terracotta apparaît.
     later(120, () => (reduce ? fade(center, 1, 200) : run(center, 1, 460)));
     // 2. Les 8 points verts sortent de lui et se placent en cercle.
@@ -89,8 +106,8 @@ function Splash({
       fade(bg, 0, 520);
       const target = targetRef.current;
       const self = markRef.current;
-      if (!toOnboarding || reduce || !target || !self) {
-        fade(markOpacity, 0, toOnboarding && !reduce ? 0 : reduce ? 200 : 520);
+      if (reduce || !target || !self) {
+        fade(markOpacity, 0, reduce ? 200 : 0);
         return;
       }
       self.measureInWindow((ax, ay) =>

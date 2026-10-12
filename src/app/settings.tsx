@@ -27,7 +27,7 @@ const TOUR: TourStep[] = [
 export default function SettingsScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic } = useSettings();
+  const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic, preload, setPreload } = useSettings();
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
   const { showOnboarding } = useIntro();
   const [notifications, setNotifications] = useState(false);
@@ -94,6 +94,18 @@ export default function SettingsScreen() {
             </Card>
           </View>
         ))}
+
+        <View style={styles.section}>
+          <SectionTitle>Rapidité</SectionTitle>
+          <Card>
+            <SwitchRow
+              label="Préparer le dernier réseau au lancement"
+              description="Quand tu ouvres OneForAll, le dernier réseau que tu as utilisé se charge en arrière-plan : il s'affiche ensuite presque tout de suite. Ça utilise un peu de données et de mémoire même si tu ne l'ouvres pas, et le réseau peut t'afficher « en ligne » à tes amis."
+              value={preload}
+              onValueChange={setPreload}
+            />
+          </Card>
+        </View>
 
         <View style={styles.section}>
           <SectionTitle>Messages Instagram</SectionTitle>
