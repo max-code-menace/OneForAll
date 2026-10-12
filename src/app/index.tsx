@@ -8,6 +8,7 @@ import { Initial, PressScale, Wordmark } from '../components/ui';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
+import { fetchInstagramUnread, readUnread, saveUnread } from '../lib/unread';
 import { formatDuration, readUsage } from '../lib/usage';
 
 /** Écran d'accueil : une carte par réseau social, et TikTok (bloqué). */
@@ -17,9 +18,16 @@ export default function HomeScreen() {
   const { platforms } = useRules();
   /** Temps passé aujourd'hui sur chaque réseau (compté sur le téléphone, rien n'est envoyé). */
   const [usage, setUsage] = useState<Record<string, number>>({});
+  /** Messages non lus par réseau (pastille). */
+  const [unread, setUnread] = useState<Record<string, number>>({});
   useFocusEffect(
     useCallback(() => {
       readUsage().then(setUsage);
+      readUnread().then(setUnread);
+      // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
+      fetchInstagramUnread().then((n) => {
+        if (n !== null) saveUnread('instagram', n).then(setUnread);
+      });
     }, []),
   );
 
@@ -61,6 +69,16 @@ export default function HomeScreen() {
                 <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
               )}
             </View>
+            {(unread[p.id] ?? 0) > 0 && (
+              <View
+                style={[styles.unread, { backgroundColor: t.accent }]}
+                accessibilityLabel={`${unread[p.id]} non lus`}
+              >
+                <Text style={{ fontSize: 13, fontWeight: '700', color: t.dark ? t.bg : '#FFFFFF' }}>
+                  {unread[p.id] > 99 ? '99+' : unread[p.id]}
+                </Text>
+              </View>
+            )}
             <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
           </PressScale>
         ))}
@@ -111,5 +129,6 @@ const styles = StyleSheet.create({
   cardText: { flex: 1, gap: 3 },
   cardName: { fontSize: 20, fontWeight: '600', letterSpacing: -0.2 },
   badge: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
+  unread: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
   footer: { fontSize: 13, lineHeight: 18, textAlign: 'center', paddingHorizontal: 12 },
 });

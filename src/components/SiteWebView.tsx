@@ -8,6 +8,7 @@ import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { useTheme } from '../lib/theme';
+import { saveUnread } from '../lib/unread';
 import { findUrlAction, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
 import { Toast, type ToastHandle } from './Toast';
@@ -82,6 +83,7 @@ export function SiteWebView({ platform, welcome }: Props) {
       if (msg.type === 'blocked') showBanner(msg.label ?? 'Page bloquée');
       if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
       if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
+      if (msg.type === 'unread' && typeof msg.count === 'number') saveUnread(platform.id, msg.count);
       if (msg.type === 'feedLocked') showBanner('Les vidéos suivantes sont bloquées');
     } catch {
       // message qui ne vient pas de nous : on l'ignore

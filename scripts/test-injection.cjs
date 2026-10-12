@@ -223,6 +223,11 @@ async function browserTests() {
   await page.waitForTimeout(300);
   const paths = (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'path').map((m) => m.path);
   assert.ok(paths.includes('/p/AAA/'), `chemin signalé : ${paths}`);
+  // Messages non lus : lus dans le titre de la page (« (3) Instagram ») et signalés à l'app.
+  await page.evaluate(() => (document.title = '(3) Instagram'));
+  await page.waitForTimeout(400);
+  const unread = (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'unread').map((m) => m.count);
+  assert.equal(unread[unread.length - 1], 3, `non lus signalés : ${unread}`);
   // Clic sur un lien vers un Reel => intercepté.
   await page.evaluate(() => {
     const a = document.createElement('a');

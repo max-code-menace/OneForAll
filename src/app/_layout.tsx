@@ -3,6 +3,8 @@ import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 
 import { Intro } from '../components/Intro';
+// Définit la tâche de fond (iOS peut réveiller l'app juste pour elle).
+import { useOpenFromNotification } from '../lib/backgroundCheck';
 import { IntroProvider } from '../lib/intro';
 import { RulesProvider } from '../lib/rules';
 import { SettingsProvider } from '../lib/settings';
@@ -27,6 +29,7 @@ export default function RootLayout() {
 
 function Navigation() {
   const t = useTheme();
+  useOpenFromNotification();
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       <StatusBar style={t.dark ? 'light' : 'dark'} />

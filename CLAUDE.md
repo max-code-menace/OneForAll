@@ -87,12 +87,21 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   « Les vidéos suivantes sont bloquées ». Refusé : blocage des vraies apps (autorisation Apple Screen Time),
   notifications (serveur = collecte). L'utilisateur trouve leur Instagram « plus centré » : capture de notre
   accueil Instagram demandée pour comparer.
+- **Notifications** (demande de l'utilisateur, pas encore buildé) : pas de serveur (refusé : il garderait les
+  connexions = collecte). À la place : pastille de non-lus sur l'accueil (`src/lib/unread.ts` : titre « (N) » de la
+  page + requête directe du téléphone à `instagram.com/api/v1/direct_v2/get_badge_count/`, endpoint NON officiel,
+  non vérifié) et, en option (désactivé par défaut, Réglages → Notifications), vérification en arrière-plan
+  `expo-background-fetch` + notification locale (`src/lib/backgroundCheck.ts`) : c'est iOS qui choisit quand
+  (souvent des heures de retard). Les cookies viennent de la WebView (`sharedCookiesEnabled` les recopie dans
+  `NSHTTPCookieStorage`, utilisé par `fetch`). Nouveaux modules natifs : expo-background-fetch, expo-task-manager,
+  expo-notifications (plugin `expo-background-fetch` dans app.json, pas de push donc pas de plugin notifications).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
 1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
 2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
-3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook).
+3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook,
+   pastille et notifications). La PR 2 est fusionnée ; les notifications sont dans une PR suivante.
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub

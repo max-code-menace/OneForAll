@@ -25,6 +25,18 @@ sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des
 - **Tu peux couper ça** : Réglages → « Mettre à jour automatiquement ». L'app n'utilise alors que
   ses règles intégrées et ne contacte personne.
 
+## Messages non lus Instagram (pastille et notifications)
+Pour afficher la pastille « 3 » sur la carte Instagram, **ton téléphone demande lui-même à Instagram**
+combien de conversations sont non lues : à l'ouverture de l'accueil et, si tu actives
+Réglages → « Nouveaux messages Instagram », de temps en temps en arrière-plan (quand iOS le permet).
+
+- La requête part **directement de ton téléphone vers instagram.com**, avec ta connexion déjà
+  enregistrée sur le téléphone, comme quand tu ouvres le site. **Aucun serveur de OneForAll** n'est
+  utilisé, et ta connexion ne quitte jamais ton téléphone.
+- Seul le nombre de messages non lus est lu et gardé sur le téléphone. Le contenu des messages
+  n'est jamais lu.
+- Les notifications sont **désactivées par défaut** et se coupent dans les Réglages.
+
 ## Ce que font les sites que tu ouvres
 Instagram, YouTube, Facebook et les autres sites s'affichent dans l'app comme dans un navigateur.
 **Ils reçoivent donc les mêmes informations que d'habitude** (ton compte, ton adresse IP, tes

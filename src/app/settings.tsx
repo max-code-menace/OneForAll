@@ -1,9 +1,10 @@
 import { router } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BackButton, Card, LinkRow, SectionTitle, Separator, SwitchRow } from '../components/ui';
+import { isNotificationsEnabled, setNotificationsEnabled } from '../lib/backgroundCheck';
 import { useIntro } from '../lib/intro';
 import { useRules, type RulesStatus } from '../lib/rules';
 import { useSettings } from '../lib/settings';
@@ -16,6 +17,26 @@ export default function SettingsScreen() {
   const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic } = useSettings();
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
   const { showOnboarding } = useIntro();
+  const [notifications, setNotifications] = useState(false);
+  useEffect(() => {
+    isNotificationsEnabled().then(setNotifications);
+  }, []);
+
+  async function toggleNotifications(value: boolean) {
+    setNotifications(value);
+    const ok = await setNotificationsEnabled(value).catch(() => false);
+    if (value && !ok) {
+      setNotifications(false);
+      Alert.alert(
+        'Notifications refusées',
+        'Pour les recevoir, autorise les notifications de OneForAll dans les Réglages de l’iPhone.',
+        [
+          { text: 'Plus tard', style: 'cancel' },
+          { text: 'Ouvrir les Réglages', onPress: () => Linking.openSettings() },
+        ],
+      );
+    }
+  }
 
   function replayOnboarding() {
     if (router.canDismiss()) router.dismissAll();
@@ -63,6 +84,18 @@ export default function SettingsScreen() {
                 <Text style={{ fontSize: 13, fontWeight: '600', color: t.ink2 }}>Bloqué</Text>
               </View>
             </View>
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle>Notifications</SectionTitle>
+          <Card>
+            <SwitchRow
+              label="Nouveaux messages Instagram (avec du retard)"
+              description="De temps en temps, ton téléphone demande lui-même à Instagram si tu as des messages non lus, et te prévient. C'est iOS qui décide quand : parfois après 20 minutes, parfois après plusieurs heures. Rien ne passe par un serveur."
+              value={notifications}
+              onValueChange={toggleNotifications}
+            />
           </Card>
         </View>
 
