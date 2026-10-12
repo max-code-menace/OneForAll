@@ -9,7 +9,8 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  *   2. vérifie l'URL et redirige /reels/, /shorts/ID… ;
  *   3. masque en JS ce que le CSS ne sait pas cibler (texte, ancêtre…) ;
  *   4. recommence à chaque changement de la page (MutationObserver = scroll infini)
- *      et à chaque navigation interne (history.pushState des sites "SPA").
+ *      et à chaque navigation interne (history.pushState des sites "SPA") ;
+ *   5. si demandé, empêche de glisser d'une vidéo plein écran à la suivante.
  */
 
 type InjectedUrlRule = { pattern: string; redirectTo: string | null; label: string };
@@ -20,6 +21,7 @@ type InjectedConfig = {
   hide: HideRule[];
   rewrite: RewriteLinkRule[];
   urls: InjectedUrlRule[];
+  lockFeed: boolean;
 };
 
 export function buildConfig(
@@ -34,6 +36,7 @@ export function buildConfig(
       hide: rules.flatMap((r) => r.hide ?? []),
       rewrite: rules.flatMap((r) => r.rewriteLinks ?? []),
       urls: rules.flatMap((r) => (r.urls ?? []).map((u) => ({ ...u, label: r.label }))),
+      lockFeed: rules.some((r) => r.lockVideoFeed),
     };
   });
 }
@@ -70,15 +73,16 @@ const RUNTIME = `
   }
 
   // Ne garder que la configuration du site actuel.
-  var css = '', hide = [], rewrite = [], urls = [];
+  var css = '', hide = [], rewrite = [], urls = [], lockFeed = false;
   for (var i = 0; i < ALL.length; i++) {
     if (!hostMatches(location.hostname, ALL[i].hosts)) continue;
     css += ALL[i].css + '\\n';
     hide = hide.concat(ALL[i].hide);
     rewrite = rewrite.concat(ALL[i].rewrite);
     urls = urls.concat(ALL[i].urls);
+    lockFeed = lockFeed || ALL[i].lockFeed;
   }
-  if (!css.trim() && !hide.length && !rewrite.length && !urls.length) return;
+  if (!css.trim() && !hide.length && !rewrite.length && !urls.length && !lockFeed) return;
 
   // Envoie un message à l'app (pour afficher "Reel bloqué", etc.).
   function post(msg) {
@@ -222,6 +226,67 @@ const RUNTIME = `
   // c) Contenu ajouté dynamiquement (scroll infini, changement d'onglet…).
   //    On observe document (et pas <html>, qui peut ne pas encore exister).
   new MutationObserver(schedule).observe(document, { childList: true, subtree: true });
+
+  // --- 5. Vidéos plein écran : pas de glissement vers la suivante ------------
+  // Instagram ouvre un Reel reçu en message PAR-DESSUS la conversation, sans
+  // changer d'adresse : les règles d'URL ne voient rien. On repère donc ce qui
+  // caractérise un fil de vidéos courtes : une vidéo qui occupe (presque) tout
+  // l'écran. Pendant un geste commencé sur elle, le glissement vertical est
+  // bloqué, pour la page (défilement natif) comme pour le site (ses propres
+  // gestionnaires de geste). Les taps, le glissement horizontal et les
+  // panneaux sans vidéo (commentaires…) restent utilisables.
+  if (lockFeed) {
+    var fullVideo = function () {
+      var vids = document.getElementsByTagName('video');
+      var W = window.innerWidth, H = window.innerHeight;
+      for (var i = 0; i < vids.length; i++) {
+        var r = vids[i].getBoundingClientRect();
+        // Une vidéo du fil (format 4:5) fait ~60 % de la hauteur : elle n'est pas concernée.
+        if (r.width >= W * 0.9 && r.height >= H * 0.75 && r.top < H * 0.5 && r.bottom > H * 0.5) return vids[i];
+      }
+      return null;
+    };
+    var scrollableParent = function (el) {
+      for (; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+        var oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight > el.clientHeight + 1) return el;
+      }
+      return null;
+    };
+    var gesture = null;
+    var start = function (target, x, y) {
+      gesture = null;
+      var v = fullVideo();
+      if (!v) return;
+      var inner = scrollableParent(target);
+      if (inner && !inner.contains(v)) return; // panneau à part (commentaires…) : libre
+      gesture = { x: x, y: y, vertical: null };
+    };
+    var move = function (e, x, y) {
+      if (!gesture) return;
+      if (gesture.vertical === null) {
+        var dx = Math.abs(x - gesture.x), dy = Math.abs(y - gesture.y);
+        if (dx > 6 || dy > 6) gesture.vertical = dy > dx;
+      }
+      // Toujours annuler le défilement natif (sinon il démarre avant qu'on ait tranché) ;
+      // en vertical, le site ne reçoit pas non plus le geste.
+      if (e.cancelable && e.type === 'touchmove') e.preventDefault();
+      if (gesture.vertical) e.stopPropagation();
+    };
+    var touchOpts = { capture: true, passive: false };
+    window.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) { gesture = null; return; }
+      start(e.target, e.touches[0].clientX, e.touches[0].clientY);
+    }, touchOpts);
+    window.addEventListener('touchmove', function (e) {
+      if (e.touches.length !== 1) return;
+      move(e, e.touches[0].clientX, e.touches[0].clientY);
+    }, touchOpts);
+    window.addEventListener('pointermove', function (e) {
+      if (e.pointerType === 'touch') move(e, e.clientX, e.clientY);
+    }, true);
+    window.addEventListener('touchend', function () { gesture = null; }, true);
+  }
 
   // d) Filet de sécurité si une navigation nous échappe.
   var lastHref = location.href;

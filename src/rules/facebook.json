@@ -35,6 +35,13 @@
       ]
     },
     {
+      "id": "fb.reelSwipe",
+      "label": "Pas de défilement vers d’autres Reels",
+      "description": "Une vidéo plein écran s’ouvre, mais tu ne peux pas glisser vers les suivantes.",
+      "defaultEnabled": true,
+      "lockVideoFeed": true
+    },
+    {
       "id": "fb.feedReels",
       "label": "Masquer les Reels dans le fil",
       "description": "Retire les blocs Reels et les vidéos courtes du fil.",

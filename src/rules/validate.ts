@@ -136,6 +136,10 @@ function sanitizeRule(raw: unknown, index: number): Rule {
   if (rewrite.length) rule.rewriteLinks = rewrite;
   const urls = array(raw.urls, `${name}.urls`).map((u, i) => sanitizeUrlRule(u, `${name}.urls[${i}]`));
   if (urls.length) rule.urls = urls;
+  if (raw.lockVideoFeed !== undefined) {
+    if (typeof raw.lockVideoFeed !== 'boolean') fail(`${name}.lockVideoFeed`, 'vrai/faux attendu');
+    if (raw.lockVideoFeed) rule.lockVideoFeed = true;
+  }
   return rule;
 }
 

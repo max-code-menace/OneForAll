@@ -107,7 +107,7 @@ function validationTests() {
   bad('redirection hors site', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = '//evil.example/'));
   bad('redirection https', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = 'https://evil.example/'));
   bad('regex invalide', 'instagram', (r) => (r.rules[1].urls[0].pattern = '('));
-  bad('lien réécrit hors site', 'instagram', (r) => (r.rules[3].rewriteLinks[0].href = 'https://evil.example/'));
+  bad('lien réécrit hors site', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.explore').rewriteLinks[0].href = 'https://evil.example/'));
   bad('version de format inconnue', 'instagram', (r) => (r.schemaVersion = 2));
   bad('mauvaise plateforme', 'instagram', (r) => (r.id = 'youtube'));
   bad('id de règle en double', 'instagram', (r) => (r.rules[1].id = r.rules[0].id));
@@ -246,6 +246,56 @@ async function browserTests() {
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');
+  await page.close();
+
+  // --- Reel ouvert depuis un message (même adresse que la conversation) ---
+  // Fil de vidéos plein écran + panneau de commentaires ; on glisse du doigt (CDP).
+  async function openViewer(isEnabled) {
+    const p = await browser.newPage({ hasTouch: true, viewport: { width: 390, height: 800 } });
+    await p.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head></head><body style="margin:0">
+      <div id="viewer" style="position:fixed;inset:0;overflow-y:scroll;scroll-snap-type:y mandatory">
+        <div style="height:100vh;scroll-snap-align:start"><video style="display:block;width:100%;height:100%"></video></div>
+        <div style="height:100vh;scroll-snap-align:start"><video style="display:block;width:100%;height:100%"></video></div>
+      </div>
+      <div id="comments" style="position:fixed;left:0;bottom:0;width:100%;height:200px;overflow-y:scroll;background:#fff">
+        <div style="height:1000px">commentaires</div>
+      </div>
+      <script>
+        window.__siteMoves = 0;
+        document.getElementById('viewer').addEventListener('touchmove', () => window.__siteMoves++);
+      </script></body></html>` }));
+    await p.addInitScript(buildInjectedScript(PLATFORMS, isEnabled));
+    await p.goto('https://www.instagram.com/direct/t/123/');
+    await p.waitForTimeout(250);
+    return p;
+  }
+  async function swipe(p, x, y1, y2) {
+    const cdp = await p.context().newCDPSession(p);
+    const pt = (y) => [{ x, y }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(y1) });
+    for (let i = 1; i <= 8; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(y1 + ((y2 - y1) * i) / 8) });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await p.waitForTimeout(400);
+  }
+  const scrollTop = (p, sel) => p.$eval(sel, (el) => el.scrollTop);
+
+  page = await openViewer(() => false); // témoin : sans la règle, le glissement fait défiler
+  await swipe(page, 200, 500, 100);
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'témoin : le glissement fait défiler sans la règle');
+  await page.close();
+
+  page = await openViewer(defaults);
+  await swipe(page, 200, 500, 100);
+  assert.equal(await scrollTop(page, '#viewer'), 0, 'pas de défilement vers le Reel suivant');
+  assert.equal(await page.evaluate(() => window.__siteMoves), 0, 'le site ne reçoit pas le geste vertical');
+  await swipe(page, 200, 780, 640); // dans les commentaires : défilement libre
+  assert.ok((await scrollTop(page, '#comments')) > 0, 'les commentaires défilent');
+  // Vidéos du fil (format 4:5, ~60 % de la hauteur) : on défile normalement.
+  await page.evaluate(() => document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '60vh')));
+  await swipe(page, 200, 500, 100);
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'le fil avec des vidéos normales défile');
   await page.close();
 
   // --- YouTube ---

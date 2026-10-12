@@ -43,6 +43,13 @@
       ]
     },
     {
+      "id": "ig.reelSwipe",
+      "label": "Pas de défilement vers d’autres Reels",
+      "description": "Un Reel reçu en message s’ouvre, mais tu ne peux pas glisser vers les Reels suivants.",
+      "defaultEnabled": true,
+      "lockVideoFeed": true
+    },
+    {
       "id": "ig.explore",
       "label": "Masquer Explore (garder la recherche)",
       "description": "Le bouton loupe mène directement à la recherche, sans la grille de contenus suggérés.",

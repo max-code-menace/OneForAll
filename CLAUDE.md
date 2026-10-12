@@ -61,11 +61,16 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 ## Retours de test de l'utilisateur (iPhone)
 - OK : onglet Reels masqué (Instagram), onglet Shorts masqué (YouTube), recherche Instagram sans grille Explore, DMs OK.
 - Build 3 OK : icône, lancement animé, présentation, accueil 4 cartes, écran TikTok bloqué, connexion Instagram gardée.
-  Mode sombre et bandeau « Reels masqués » pas encore vérifiés.
+  Mode sombre OK. Bandeau « Reels masqués » pas encore vérifié.
 - **Problème ouvert** : un Reel reçu en message privé s'ouvre, et on peut descendre vers d'autres Reels. Le blocage par
   adresse n'a pas déclenché ; hypothèse non vérifiée : Instagram l'ouvre dans une fenêtre sans changer l'adresse.
   Il faut le **chemin affiché par le mode diagnostic** (Réglages → Diagnostic) sur la nouvelle version.
-  **Choix de l'utilisateur : A** (voir le Reel envoyé, mais pas les suivants). Chemin diagnostic : pas encore reçu.
+  **Choix de l'utilisateur : A** (voir le Reel envoyé, mais pas les suivants). **Confirmé par le diagnostic** :
+  l'adresse reste `/direct/t/<id>/` pendant le Reel puis pendant les « Suggestions » qui suivent.
+  Réponse (pas encore buildée) : champ de règle `lockVideoFeed` + règles `ig.reelSwipe` / `fb.reelSwipe`. Le moteur
+  repère une vidéo qui occupe l'écran (≥ 90 % largeur, ≥ 75 % hauteur) et bloque le glissement vertical commencé
+  dessus (défilement natif + gestionnaires du site) ; les panneaux sans vidéo (commentaires) restent libres.
+  Testé seulement sur une fausse page (Chromium). Non testé sur le vrai Instagram.
 - **Facebook** (ajouté à la demande de l'utilisateur) : règles écrites sans aucun test sur le vrai site
   (`m.facebook.com`). **Connexion bloquée** par une « vérification robot » que l'utilisateur n'arrive pas à valider
   dans l'app : capture demandée.
@@ -75,7 +80,7 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
-1. Recevoir la capture diagnostic du Reel ouvert depuis un DM → corriger la règle (choix A).
+1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
 2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
 3. Puis un build 4 avec tout ça (et la suppression de la barre du haut).
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
