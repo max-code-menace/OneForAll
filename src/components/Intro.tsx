@@ -23,15 +23,14 @@ import { PrimaryButton } from './ui';
  * la première page de la présentation : aucune coupure entre les deux.
  */
 export function Intro() {
-  const { loaded, onboardingVisible } = useIntro();
-  const [splashDone, setSplashDone] = useState(false);
+  const { loaded, onboardingVisible, splashDone, setSplashDone } = useIntro();
   const onbMarkRef = useRef<View>(null);
 
   return (
     <>
       {loaded && <Onboarding visible={onboardingVisible} markRef={onbMarkRef} markShown={splashDone} />}
       {!splashDone && (
-        <Splash ready={loaded} toOnboarding={onboardingVisible} targetRef={onbMarkRef} onDone={() => setSplashDone(true)} />
+        <Splash ready={loaded} toOnboarding={onboardingVisible} targetRef={onbMarkRef} onDone={setSplashDone} />
       )}
     </>
   );
@@ -251,7 +250,7 @@ function Onboarding({
           <Text style={[styles.title, { color: t.ink }]}>Instagram, YouTube et Facebook, sans ce qui te retient.</Text>
           <Text style={[styles.lead, { color: t.ink2 }]}>
             OneForAll masque les Reels, les Shorts et Explore. Tu gardes tes messages, les profils, la recherche et la
-            publication. TikTok, lui, est bloqué.
+            publication.
           </Text>
         </View>
 
@@ -261,7 +260,7 @@ function Onboarding({
           <View style={{ gap: 12 }}>
             {[
               ['Elle ne collecte rien', 'Pas de compte, pas de serveur, pas de statistiques. Tes réglages restent sur ton téléphone.'],
-              ['Elle n’est pas affiliée', 'OneForAll n’a aucun lien avec Instagram, Facebook (Meta), YouTube (Google) ni TikTok.'],
+              ['Elle n’est pas affiliée', 'OneForAll n’a aucun lien avec Instagram, Facebook (Meta) ni YouTube (Google).'],
               ['Elle ne te fera jamais payer', 'Pas de pub, pas d’abonnement. Le code est public et chacun peut le vérifier.'],
             ].map(([title, text]) => (
               <View key={title} style={[styles.promise, { backgroundColor: t.surface }, cardShadow(t)]}>

@@ -29,6 +29,7 @@ défilement infini, donc l'app refuse d'ouvrir ses liens, d'où qu'ils viennent.
 | ✅ | Instagram : fil « Abonnements » (les gens que tu suis), publicités et suggestions masquées. |
 | ✅ | Un Reel reçu en message s'ouvre, mais on ne peut pas glisser vers les suivants. |
 | ✅ | Temps passé aujourd'hui sur chaque réseau, compté uniquement sur ton téléphone. |
+| ✅ | Pastille des messages Instagram non lus, et notifications (en option, avec du retard), sans aucun serveur. |
 | ✅ | Chaque règle s'active ou se désactive dans **Réglages**. |
 | ✅ | Bloque les liens TikTok (interdiction codée dans l'app, qu'une mise à jour de règles ne peut pas lever). |
 | ⚠️ | **N'est pas affiliée** à Instagram, Facebook (Meta), YouTube (Google) ni TikTok. |

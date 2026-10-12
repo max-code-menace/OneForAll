@@ -1,18 +1,19 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
 import { Animated, StyleSheet, Text, View } from 'react-native';
 
 import { EASE, useReduceMotion, useTheme } from '../lib/theme';
 
 export type ToastHandle = {
-  /** Affiche le bandeau après `delay` ms, pendant 2,5 s. */
-  show: (text: string, delay?: number) => void;
+  /** Affiche le bandeau après `delay` ms, pendant `duration` ms (2,5 s ; Infinity = jusqu'à hide()). */
+  show: (text: string, delay?: number, duration?: number) => void;
+  hide: () => void;
 };
 
 /**
- * Petit bandeau en bas de l'écran (« Reels masqués », « TikTok est bloqué »…).
+ * Petit bandeau en bas de l'écran (« Reels masqués », « Page bloquée »…).
  * Il monte de 12 pt en apparaissant, puis s'efface. On ne peut pas le toucher.
  */
-export const Toast = forwardRef<ToastHandle>(function Toast(_, ref) {
+export const Toast = forwardRef<ToastHandle, { pillRef?: RefObject<View | null> }>(function Toast({ pillRef }, ref) {
   const t = useTheme();
   const reduce = useReduceMotion();
   const [text, setText] = useState('');
@@ -22,7 +23,11 @@ export const Toast = forwardRef<ToastHandle>(function Toast(_, ref) {
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
   useImperativeHandle(ref, () => ({
-    show(next, delay = 0) {
+    hide() {
+      timers.current.forEach(clearTimeout);
+      Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+    },
+    show(next, delay = 0, duration = 2500) {
       timers.current.forEach(clearTimeout);
       anim.stopAnimation();
       anim.setValue(0);
@@ -31,9 +36,13 @@ export const Toast = forwardRef<ToastHandle>(function Toast(_, ref) {
           setText(next);
           Animated.timing(anim, { toValue: 1, duration: 260, easing: EASE, useNativeDriver: true }).start();
         }, delay),
-        setTimeout(() => {
-          Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
-        }, delay + 2500),
+        ...(Number.isFinite(duration)
+          ? [
+              setTimeout(() => {
+                Animated.timing(anim, { toValue: 0, duration: 200, useNativeDriver: true }).start();
+              }, delay + duration),
+            ]
+          : []),
       ];
     },
   }));
@@ -43,6 +52,8 @@ export const Toast = forwardRef<ToastHandle>(function Toast(_, ref) {
   return (
     <View pointerEvents="none" style={styles.wrap}>
       <Animated.View
+        ref={pillRef}
+        collapsable={false}
         style={[styles.toast, { backgroundColor: t.inverse, opacity: anim, transform: [{ translateY }] }]}
         accessibilityLiveRegion="polite"
       >

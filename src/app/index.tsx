@@ -4,22 +4,56 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mark } from '../components/Mark';
-import { Initial, PressScale, Wordmark } from '../components/ui';
+import { useTour, type TourStep } from '../components/Tour';
+import { PressScale, SiteIcon, Wordmark } from '../components/ui';
+import { useIntro } from '../lib/intro';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
+import { fetchInstagramUnread, readUnread, saveUnread } from '../lib/unread';
 import { formatDuration, readUsage } from '../lib/usage';
 
-/** Écran d'accueil : une carte par réseau social, et TikTok (bloqué). */
+const TOUR: TourStep[] = [
+  {
+    target: 'card-instagram',
+    title: 'Ouvre un réseau',
+    text: 'Touche une carte : le site s’ouvre sans Reels, Shorts ni Explore. Tes messages et ton profil restent là.',
+    fx: 0.9,
+    fy: 0.5,
+    r: 26,
+  },
+  {
+    target: 'usage-instagram',
+    title: 'Ton temps du jour',
+    text: 'Le temps passé aujourd’hui sur chaque réseau. Il est compté sur ton téléphone, rien n’est envoyé.',
+    fx: 1,
+    fy: 0.5,
+    dx: 16,
+    r: 8,
+  },
+  { target: 'settings', title: 'Les réglages', text: 'Choisis ce qui est masqué, réseau par réseau.', fx: 0.5, fy: 0.5, r: 26 },
+];
+
+/** Écran d'accueil : une carte par réseau social. */
 export default function HomeScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { platforms } = useRules();
+  const { loaded, onboardingVisible, splashDone } = useIntro();
+  // Petit tuto la 1re fois, une fois le lancement et la présentation terminés.
+  const tour = useTour('home', TOUR, loaded && splashDone && !onboardingVisible);
   /** Temps passé aujourd'hui sur chaque réseau (compté sur le téléphone, rien n'est envoyé). */
   const [usage, setUsage] = useState<Record<string, number>>({});
+  /** Messages non lus par réseau (pastille). */
+  const [unread, setUnread] = useState<Record<string, number>>({});
   useFocusEffect(
     useCallback(() => {
       readUsage().then(setUsage);
+      readUnread().then(setUnread);
+      // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
+      fetchInstagramUnread().then((n) => {
+        if (n !== null) saveUnread('instagram', n).then(setUnread);
+      });
     }, []),
   );
 
@@ -34,6 +68,7 @@ export default function HomeScreen() {
           <Wordmark size={19} />
         </View>
         <Pressable
+          ref={tour.target('settings')}
           accessibilityRole="button"
           onPress={() => router.push('/settings')}
           style={({ pressed }) => [styles.settings, { backgroundColor: t.surface2, opacity: pressed ? 0.7 : 1 }]}
@@ -46,40 +81,37 @@ export default function HomeScreen() {
 
       <View style={{ gap: 12 }}>
         {platforms.map((p) => (
-          <PressScale
-            key={p.id}
-            accessibilityLabel={`Ouvrir ${p.name}`}
-            onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
-            style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
-            pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
-          >
-            <Initial letter={p.name[0]} size={52} radius={16} />
-            <View style={styles.cardText}>
-              <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
-              <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
-              {(usage[p.id] ?? 0) >= 60 && (
-                <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
+          <View key={p.id} ref={tour.target(`card-${p.id}`)} collapsable={false}>
+            <PressScale
+              accessibilityLabel={`Ouvrir ${p.name}`}
+              onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
+              style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
+              pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
+            >
+              <SiteIcon platformId={p.id} name={p.name} size={52} radius={16} />
+              <View style={styles.cardText}>
+                <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
+                <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
+                {(usage[p.id] ?? 0) >= 60 && (
+                  <View style={{ alignSelf: 'flex-start' }} ref={tour.target(`usage-${p.id}`)} collapsable={false}>
+                    <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
+                  </View>
+                )}
+              </View>
+              {(unread[p.id] ?? 0) > 0 && (
+                <View
+                  style={[styles.unread, { backgroundColor: t.accent }]}
+                  accessibilityLabel={`${unread[p.id]} non lus`}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: t.dark ? t.bg : '#FFFFFF' }}>
+                    {unread[p.id] > 99 ? '99+' : unread[p.id]}
+                  </Text>
+                </View>
               )}
-            </View>
-            <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
-          </PressScale>
+              <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
+            </PressScale>
+          </View>
         ))}
-
-        <PressScale
-          accessibilityLabel="TikTok, bloqué"
-          onPress={() => router.push('/blocked')}
-          style={[styles.card, styles.blockedCard, { borderColor: t.sep2 }]}
-          pressedStyle={{ backgroundColor: t.surface2 }}
-        >
-          <Initial letter="T" size={52} radius={16} muted />
-          <View style={styles.cardText}>
-            <Text style={[styles.cardName, { color: t.ink2 }]}>TikTok</Text>
-            <Text style={{ fontSize: 15, color: t.ink2 }}>Uniquement des vidéos courtes</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: t.surface2 }]}>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: t.ink2 }}>Bloqué</Text>
-          </View>
-        </PressScale>
       </View>
 
       <View style={{ flex: 1, minHeight: 16 }} />
@@ -87,6 +119,7 @@ export default function HomeScreen() {
         Reels, Shorts, vidéos courtes et Explore sont masqués. DMs, profils, recherche et publication restent
         disponibles.
       </Text>
+      {tour.element}
     </ScrollView>
   );
 }
@@ -107,9 +140,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  blockedCard: { backgroundColor: 'transparent', borderStyle: 'dashed' },
   cardText: { flex: 1, gap: 3 },
   cardName: { fontSize: 20, fontWeight: '600', letterSpacing: -0.2 },
-  badge: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
+  unread: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
   footer: { fontSize: 13, lineHeight: 18, textAlign: 'center', paddingHorizontal: 12 },
 });

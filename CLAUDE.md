@@ -20,14 +20,16 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
 - `src/components/SiteWebView.tsx` : la WebView (iOS). `SiteWebView.web.tsx` : simple message pour le web.
-- `src/app/` : écrans (accueil, navigateur, TikTok bloqué `blocked`, réglages, à propos), Expo Router,
+- `src/app/` : écrans (accueil, navigateur, réglages, à propos), Expo Router,
   sans en-tête natif (chaque écran dessine le sien).
 - Design : `design/OneForAll_Prototype.html` (export de Claude Design, s'ouvre dans un navigateur).
   Reproduit dans `src/lib/theme.ts` (couleurs claires/sombres, courbes), `src/components/ui.tsx`,
   `Mark.tsx` (symbole), `Intro.tsx` (lancement animé + présentation 3 pages, `src/lib/intro.tsx`),
   `Toast.tsx` (bandeau « Reels masqués »). Icône : `assets/icon.png` (générée depuis le symbole).
-  Écarts voulus : pas de logos de marques (une lettre à la place), TikTok non débloquable (pas
-  d'interrupteur), section Diagnostic gardée dans les Réglages.
+  Écarts voulus : section Diagnostic gardée dans les Réglages. Icônes des cartes : `assets/sites/*.png`,
+  découpées dans une image fournie par l'utilisateur (ressemblent aux logos officiels : risque de remarque
+  d'Apple, signalé, choix de l'utilisateur). **TikTok n'apparaît plus nulle part dans l'interface** (demande de
+  l'utilisateur) ; ses liens restent bannis en silence par `banned.ts`.
 - Docs publiques : `README.md`, `PRIVACY.md`, `CONTRIBUTING.md`. Licence **MPL-2.0**.
 
 ## Vérifier
@@ -77,8 +79,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   était figé sur iOS 18, incohérent avec le vrai moteur. Corrigé (à builder) : `applicationNameForUserAgent` avec la
   vraie version d'iOS (SiteWebView.tsx). Si ça ne suffit pas : regarder les fenêtres pop-up
   (`javaScriptCanOpenWindowsAutomatically`, `onOpenWindow`).
-- Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre ; glisser
-  depuis le bord gauche = retour à OneForAll ; tirer vers le bas = recharger ; astuce affichée à la 1re ouverture.
+- Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre.
+  2e design (artifact Claude Design de l'utilisateur, « Prototype animé ») : dans un site, glisser depuis le bord
+  **droit** = onglet suivant du réseau, bord **gauche** = onglet précédent (`SITE_TABS` dans `src/lib/sites.ts`,
+  bords de 22 pt, seuil 50 pt, `injectJavaScript` qui clique le lien du site) ; seul le bouton rond ramène à
+  OneForAll (geste de retour iOS coupé sur cet écran) ; tirer vers le bas = recharger. **Petit tuto** la 1re fois
+  sur l'accueil, un site et les Réglages (`src/components/Tour.tsx`, `oneforall:tour-seen:v1`), il remplace l'astuce
+  « glisser ». Onglet Profil d'Instagram trouvé par la photo de profil (alt « profil »/« profile ») : non vérifié.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
 - Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
   (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,
@@ -87,12 +94,21 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   « Les vidéos suivantes sont bloquées ». Refusé : blocage des vraies apps (autorisation Apple Screen Time),
   notifications (serveur = collecte). L'utilisateur trouve leur Instagram « plus centré » : capture de notre
   accueil Instagram demandée pour comparer.
+- **Notifications** (demande de l'utilisateur, pas encore buildé) : pas de serveur (refusé : il garderait les
+  connexions = collecte). À la place : pastille de non-lus sur l'accueil (`src/lib/unread.ts` : titre « (N) » de la
+  page + requête directe du téléphone à `instagram.com/api/v1/direct_v2/get_badge_count/`, endpoint NON officiel,
+  non vérifié) et, en option (désactivé par défaut, Réglages → Notifications), vérification en arrière-plan
+  `expo-background-fetch` + notification locale (`src/lib/backgroundCheck.ts`) : c'est iOS qui choisit quand
+  (souvent des heures de retard). Les cookies viennent de la WebView (`sharedCookiesEnabled` les recopie dans
+  `NSHTTPCookieStorage`, utilisé par `fetch`). Nouveaux modules natifs : expo-background-fetch, expo-task-manager,
+  expo-notifications (plugin `expo-background-fetch` dans app.json, pas de push donc pas de plugin notifications).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
 1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
 2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
-3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook).
+3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook,
+   pastille et notifications). La PR 2 est fusionnée ; les notifications sont dans une PR suivante.
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub

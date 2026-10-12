@@ -1,7 +1,8 @@
 import { router } from 'expo-router';
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type RefObject } from 'react';
 import {
   Animated,
+  Image,
   Pressable,
   StyleSheet,
   Switch,
@@ -11,6 +12,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { SITE_ICON } from '../lib/sites';
 import { cardShadow, EASE, useReduceMotion, useTheme } from '../lib/theme';
 
 /** Nom de l'app : « One » « For » (en vert) « All ». */
@@ -58,6 +60,13 @@ export function Initial({ letter, size, radius, muted }: { letter: string; size:
       <Text style={{ fontSize: size * 0.42, fontWeight: '600', color: t.ink2 }}>{letter}</Text>
     </View>
   );
+}
+
+/** Icône d'un réseau (ou son initiale si l'icône manque). */
+export function SiteIcon({ platformId, name, size, radius }: { platformId: string; name: string; size: number; radius: number }) {
+  const icon = SITE_ICON[platformId];
+  if (!icon) return <Initial letter={name[0]} size={size} radius={radius} />;
+  return <Image source={icon} accessibilityIgnoresInvertColors style={{ width: size, height: size, borderRadius: radius }} />;
 }
 
 /** Zone qui se tasse très légèrement quand on appuie (scale 0.98, sans rebond). */
@@ -140,12 +149,15 @@ export function SwitchRow({
   value,
   onValueChange,
   border,
+  switchRef,
 }: {
   label: string;
   description?: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
   border?: boolean;
+  /** Pour que le tuto puisse montrer l'interrupteur. */
+  switchRef?: RefObject<View | null>;
 }) {
   const t = useTheme();
   return (
@@ -159,12 +171,14 @@ export function SwitchRow({
         <Text style={[styles.rowLabel, { color: t.ink }]}>{label}</Text>
         {description ? <Text style={[styles.rowDescription, { color: t.ink2 }]}>{description}</Text> : null}
       </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ true: t.primary, false: t.switchOff }}
-        ios_backgroundColor={t.switchOff}
-      />
+      <View ref={switchRef} collapsable={false}>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ true: t.primary, false: t.switchOff }}
+          ios_backgroundColor={t.switchOff}
+        />
+      </View>
     </Pressable>
   );
 }
@@ -185,11 +199,13 @@ export function LinkRow({ label, onPress, external }: { label: string; onPress: 
 }
 
 /** Titre d'une section de réglages. */
-export function SectionTitle({ children, initial }: { children: string; initial?: string }) {
+export function SectionTitle({ children, initial, platformId }: { children: string; initial?: string; platformId?: string }) {
   const t = useTheme();
   return (
     <View style={styles.sectionTitle}>
-      {initial ? (
+      {platformId ? (
+        <SiteIcon platformId={platformId} name={children} size={24} radius={7} />
+      ) : initial ? (
         <View style={[styles.sectionInitial, { backgroundColor: t.surface2 }]}>
           <Text style={{ fontSize: 12, fontWeight: '700', color: t.ink2 }}>{initial}</Text>
         </View>

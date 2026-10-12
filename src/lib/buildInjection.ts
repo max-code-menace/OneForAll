@@ -196,8 +196,19 @@ const RUNTIME = `
     post({ type: 'path', path: location.pathname });
   }
 
+  // Messages non lus : les sites les affichent dans le titre (« (3) Instagram »).
+  var lastUnread = -1;
+  function reportUnread() {
+    var m = /^\\((\\d{1,4})\\+?\\)/.exec((document.title || '').trim());
+    var n = m ? Number(m[1]) : 0;
+    if (!document.title || n === lastUnread) return;
+    lastUnread = n;
+    post({ type: 'unread', count: n });
+  }
+
   function run() {
     reportPath();
+    reportUnread();
     if (!checkUrl()) clean();
   }
 
