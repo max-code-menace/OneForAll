@@ -1,100 +1,97 @@
-# Sans Reels
+# OneForAll
 
-Une app iPhone perso qui ouvre **Instagram** et **YouTube** sans **Reels, Shorts ni Explore**,
-et qui bloque **TikTok**. Les DMs, profils, la recherche et la publication marchent normalement.
+**Les réseaux sociaux, sans le contenu fait pour te rendre accro.**
 
-Elle affiche le site web mobile dans une WebView et y injecte du CSS + JavaScript qui masque
-le contenu addictif (et recommence à chaque scroll grâce à un `MutationObserver`).
+OneForAll est une app iPhone gratuite et open source. Elle ouvre Instagram et YouTube et en
+retire les **Reels, les Shorts et Explore**. Tu gardes ce qui compte : tes messages, les
+profils, la recherche et la publication. **TikTok est bloqué**, car il ne contient que de la vidéo courte.
 
-## Structure
+> Un pour tous : un outil gratuit, que chacun peut vérifier, utiliser et améliorer.
 
-```
-src/
-  app/                    écrans (Expo Router)
-    index.tsx             accueil : 3 boutons
-    browser/[platform].tsx  le site dans une WebView (ou l'écran « bloqué »)
-    settings.tsx          un interrupteur par règle
-  rules/                  ⬅️ LES RÈGLES, à modifier quand Instagram change son HTML
-    instagram.ts
-    youtube.ts
-    tiktok.ts
-    types.ts              explication de chaque champ
-  lib/
-    buildInjection.ts     transforme les règles en script injecté dans la page
-    urlRules.ts           bloque / redirige les URLs avant chargement
-    settings.tsx          sauvegarde des réglages
-  components/             WebView, écran « bloqué »
-scripts/test-injection.cjs  test du script injecté dans Chromium
-```
+## Nos engagements
 
-**Un Reel réapparaît ?** Ouvre le fichier de la plateforme dans `src/rules/`, ajoute un
-sélecteur CSS (`css`) ou une règle `hide` (masque un élément, ou son ancêtre avec `closest`).
-Les commentaires de `types.ts` expliquent chaque champ.
+- **Gratuit.** Pas de pub, pas d'abonnement, pas de fonctions payantes.
+- **Open source.** Tout le code est ici, sous licence [MPL-2.0](LICENSE). Tu peux le lire,
+  le modifier, le partager. Si tu modifies un fichier et le distribues, tu partages ta modification.
+- **Aucune collecte de données.** Pas de compte, pas de serveur, pas de statistiques.
+  Voir [PRIVACY.md](PRIVACY.md).
+- **Transparent.** Ce que l'app change dans les pages tient dans quelques fichiers lisibles :
+  [`src/rules/`](src/rules).
+- **Dons libres.** Voir ci-dessous. Jamais obligatoires, jamais dans l'app.
 
-## 1. Tester sur ton ordinateur / ton iPhone (gratuit)
+## Ce que l'app fait (et ne fait pas)
+
+| | |
+|---|---|
+| ✅ | Masque les Reels, les Shorts, Explore. Redirige `/reels/` et `/shorts/…`. |
+| ✅ | Garde DMs, profils, recherche, publication. |
+| ✅ | Chaque règle s'active ou se désactive dans **Réglages**. |
+| ⚠️ | **N'est pas affiliée** à Instagram (Meta), YouTube (Google) ni TikTok. |
+| ⚠️ | Elle affiche leurs sites web en modifiant l'affichage. Cela peut ne pas respecter leurs conditions d'utilisation. Nous n'avons connaissance d'aucune sanction pour cet usage, mais nous ne pouvons pas le garantir. |
+| ⚠️ | Quand un site change son HTML, une règle peut cesser de fonctionner jusqu'à sa mise à jour. |
+
+## Soutenir le projet
+
+L'app sera toujours gratuite. Si tu veux aider, un don, même minuscule, couvre les frais
+(compte développeur Apple : 99 €/an) et le temps passé. *(Lien de don : bientôt.)*
+
+Autres façons d'aider : parler du projet, signaler une règle cassée, corriger un sélecteur
+([CONTRIBUTING.md](CONTRIBUTING.md)).
+
+## Installer l'app
+
+L'app n'est pas (encore) sur l'App Store. Les étapes pour l'installer sur un iPhone sont plus bas.
+
+### Tester vite et gratuitement (Expo Go)
 
 ```bash
 npm install
 npx expo start
 ```
 
-- **iPhone** : installe **Expo Go** (App Store), scanne le QR code affiché avec l'appareil photo.
-  Le PC et l'iPhone doivent être sur le même Wi-Fi (sinon : `npx expo start --tunnel`).
-  Tout fonctionne dans Expo Go, y compris les WebViews filtrées.
-- **Navigateur** : appuie sur `w`. Seuls l'accueil, les réglages et l'écran TikTok
-  s'affichent (une WebView ne peut pas tourner dans un navigateur).
+Installe **Expo Go** sur l'iPhone et scanne le QR code (même Wi-Fi, sinon `npx expo start --tunnel`).
+Dans un navigateur (touche `w`), seuls l'accueil et les réglages s'affichent : une WebView
+ne tourne que sur le téléphone.
 
-Vérifications : `npm run typecheck` et `npm run test:inject` (ce test demande Playwright).
+### Installer la vraie app (EAS Build, sans Mac)
 
-## 2. Installer la vraie app sur l'iPhone (EAS Build, sans Mac)
-
-### Ce qu'il te faut
-- Un **compte Apple Developer payant** (99 €/an) : https://developer.apple.com/programs/
-  (le compte gratuit ne permet pas l'installation « ad hoc »).
-- Un **compte Expo** gratuit : https://expo.dev/signup
-
-### Une seule fois
+Il te faut un **compte Apple Developer** (99 €/an) et un compte [Expo](https://expo.dev/signup) gratuit.
 
 ```bash
-npm install -g eas-cli         # ou préfixe chaque commande par : npx eas-cli@latest
-eas login                      # connexion à ton compte Expo
-eas init                       # crée le projet sur expo.dev (ajoute un projectId dans app.json)
-```
-
-Change `ios.bundleIdentifier` dans `app.json` si tu veux (doit être unique, ex. `com.tonnom.sansreels`).
-
-**Enregistrer ton iPhone** (Apple n'autorise une app ad hoc que sur les appareils déclarés) :
-
-```bash
-eas device:create
-```
-
-Choisis « Website », ouvre le lien / QR code **dans Safari sur l'iPhone**, installe le profil
-proposé (Réglages → Profil téléchargé → Installer). EAS récupère l'identifiant (UDID) de l'iPhone.
-
-### Construire et installer
-
-```bash
+npm install -g eas-cli
+eas login
+eas init
+eas device:create                           # ouvre le lien dans Safari sur l'iPhone
 eas build --platform ios --profile preview
 ```
 
-- Réponds **oui** pour te connecter à ton compte Apple : EAS crée tout seul le certificat et le
-  profil de provisionnement (avec ton iPhone dedans).
-- Le build tourne dans le cloud (~10-20 min). À la fin, un lien et un QR code s'affichent
-  (aussi sur https://expo.dev, rubrique Builds).
-- Ouvre ce lien **dans Safari sur l'iPhone** → **Install**.
-- iOS 16 et plus : active le **mode développeur** (Réglages → Confidentialité et sécurité →
-  Mode développeur → redémarrer), sinon l'app ne s'ouvre pas.
+Ouvre le lien du build **dans Safari sur l'iPhone** → **Installer**. Sur iOS 16+, active
+Réglages → Confidentialité et sécurité → **Mode développeur**.
 
-### Plus tard
-- **Nouvel iPhone** : `eas device:create`, puis relance `eas build --platform ios --profile preview`
-  (accepte de régénérer le profil).
-- **Modifier les règles sans recompiler** : possible avec `eas update` (à configurer), sinon
-  refais simplement un build.
-- Un build ad hoc expire au bout d'**un an** (durée du certificat) : il suffira d'en refaire un.
+Cette méthode « ad hoc » demande d'enregistrer chaque iPhone à l'avance (100 appareils
+maximum par an) et expire après un an. Pour partager avec plus de monde, la piste suivante est
+**TestFlight** (voir la feuille de route).
 
-## Limites connues
-- Instagram et YouTube changent leur HTML : certains sélecteurs devront être mis à jour.
-- Connexion Google/YouTube : Google bloque parfois la connexion dans les WebViews. L'app se
-  présente donc comme Safari (`userAgent` dans `src/rules/youtube.ts`), ce qui suffit en général.
-- Usage personnel uniquement (pas destiné à l'App Store).
+## Structure
+
+```
+src/
+  app/          écrans : accueil, site (WebView), réglages
+  rules/        ⬅️ les règles par plateforme (à modifier quand un site change)
+  lib/          moteur d'injection, règles d'URL, sauvegarde des réglages
+  components/   WebView, écran « bloqué »
+scripts/test-injection.cjs   test du moteur dans Chromium (npm run test:inject)
+```
+
+Vérifications : `npm run typecheck` et `npm run test:inject` (nécessite Playwright).
+
+## Feuille de route
+
+- [ ] Règles mises à jour à distance (corriger sans réinstaller)
+- [ ] Distribution via TestFlight
+- [ ] Version Android
+- [ ] Lien de don
+
+## Licence
+
+[MPL-2.0](LICENSE).

@@ -9,7 +9,7 @@ export default function RootLayout() {
     <SettingsProvider>
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerBackTitle: 'Accueil' }}>
-        <Stack.Screen name="index" options={{ title: 'Sans Reels' }} />
+        <Stack.Screen name="index" options={{ title: 'OneForAll' }} />
         <Stack.Screen name="settings" options={{ title: 'Réglages' }} />
         <Stack.Screen
           name="browser/[platform]"

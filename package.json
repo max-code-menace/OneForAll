@@ -1,5 +1,5 @@
 {
-  "name": "app-sans-reels",
+  "name": "oneforall",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
@@ -29,5 +29,6 @@
     "typecheck": "tsc --noEmit",
     "test:inject": "node scripts/test-injection.cjs"
   },
-  "private": true
+  "private": true,
+  "license": "MPL-2.0"
 }
