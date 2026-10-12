@@ -58,7 +58,7 @@ export default function AboutScreen() {
         </Card>
 
         <Text style={[styles.disclaimer, { color: t.ink3 }]}>
-          OneForAll n’est pas affiliée à Instagram, Facebook (Meta), YouTube (Google) ni TikTok.
+          OneForAll n’est pas affiliée à Instagram, Facebook (Meta) ni YouTube (Google).
         </Text>
       </ScrollView>
     </View>

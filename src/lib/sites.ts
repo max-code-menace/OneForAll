@@ -1,3 +1,12 @@
+import type { ImageSourcePropType } from 'react-native';
+
+/** Icônes des cartes (choisies par l'utilisateur ; une lettre s'affiche si une icône manque). */
+export const SITE_ICON: Record<string, ImageSourcePropType> = {
+  instagram: require('../../assets/sites/instagram.png'),
+  youtube: require('../../assets/sites/youtube.png'),
+  facebook: require('../../assets/sites/facebook.png'),
+};
+
 /**
  * Textes du design pour chaque réseau : sous-titre sur l'accueil et petit
  * bandeau affiché à l'ouverture du site. (Les règles, elles, sont dans src/rules/.)

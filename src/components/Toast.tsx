@@ -9,7 +9,7 @@ export type ToastHandle = {
 };
 
 /**
- * Petit bandeau en bas de l'écran (« Reels masqués », « TikTok est bloqué »…).
+ * Petit bandeau en bas de l'écran (« Reels masqués », « Page bloquée »…).
  * Il monte de 12 pt en apparaissant, puis s'efface. On ne peut pas le toucher.
  */
 export const Toast = forwardRef<ToastHandle>(function Toast(_, ref) {

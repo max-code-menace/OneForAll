@@ -11,7 +11,7 @@ import { SettingsProvider } from '../lib/settings';
 import { useTheme } from '../lib/theme';
 
 /**
- * Navigation principale : une pile d'écrans (Accueil → Site / TikTok bloqué / Réglages → À propos).
+ * Navigation principale : une pile d'écrans (Accueil → Site / Réglages → À propos).
  * Chaque écran dessine son propre en-tête (design OneForAll) ; la poussée reste celle d'iOS.
  * Par-dessus : l'animation de lancement et la présentation.
  */
@@ -37,7 +37,6 @@ function Navigation() {
         <Stack.Screen name="index" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="about" />
-        <Stack.Screen name="blocked" />
         {/* Glisser depuis le bord gauche ramène à l'accueil (aussi depuis un site). */}
         <Stack.Screen name="browser/[platform]" />
       </Stack>

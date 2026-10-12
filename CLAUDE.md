@@ -20,14 +20,16 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
 - `src/components/SiteWebView.tsx` : la WebView (iOS). `SiteWebView.web.tsx` : simple message pour le web.
-- `src/app/` : écrans (accueil, navigateur, TikTok bloqué `blocked`, réglages, à propos), Expo Router,
+- `src/app/` : écrans (accueil, navigateur, réglages, à propos), Expo Router,
   sans en-tête natif (chaque écran dessine le sien).
 - Design : `design/OneForAll_Prototype.html` (export de Claude Design, s'ouvre dans un navigateur).
   Reproduit dans `src/lib/theme.ts` (couleurs claires/sombres, courbes), `src/components/ui.tsx`,
   `Mark.tsx` (symbole), `Intro.tsx` (lancement animé + présentation 3 pages, `src/lib/intro.tsx`),
   `Toast.tsx` (bandeau « Reels masqués »). Icône : `assets/icon.png` (générée depuis le symbole).
-  Écarts voulus : pas de logos de marques (une lettre à la place), TikTok non débloquable (pas
-  d'interrupteur), section Diagnostic gardée dans les Réglages.
+  Écarts voulus : section Diagnostic gardée dans les Réglages. Icônes des cartes : `assets/sites/*.png`,
+  découpées dans une image fournie par l'utilisateur (ressemblent aux logos officiels : risque de remarque
+  d'Apple, signalé, choix de l'utilisateur). **TikTok n'apparaît plus nulle part dans l'interface** (demande de
+  l'utilisateur) ; ses liens restent bannis en silence par `banned.ts`.
 - Docs publiques : `README.md`, `PRIVACY.md`, `CONTRIBUTING.md`. Licence **MPL-2.0**.
 
 ## Vérifier

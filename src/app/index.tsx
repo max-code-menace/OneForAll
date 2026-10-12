@@ -4,14 +4,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mark } from '../components/Mark';
-import { Initial, PressScale, Wordmark } from '../components/ui';
+import { PressScale, SiteIcon, Wordmark } from '../components/ui';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
 import { fetchInstagramUnread, readUnread, saveUnread } from '../lib/unread';
 import { formatDuration, readUsage } from '../lib/usage';
 
-/** Écran d'accueil : une carte par réseau social, et TikTok (bloqué). */
+/** Écran d'accueil : une carte par réseau social. */
 export default function HomeScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -61,7 +61,7 @@ export default function HomeScreen() {
             style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
             pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
           >
-            <Initial letter={p.name[0]} size={52} radius={16} />
+            <SiteIcon platformId={p.id} name={p.name} size={52} radius={16} />
             <View style={styles.cardText}>
               <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
               <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
@@ -82,22 +82,6 @@ export default function HomeScreen() {
             <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
           </PressScale>
         ))}
-
-        <PressScale
-          accessibilityLabel="TikTok, bloqué"
-          onPress={() => router.push('/blocked')}
-          style={[styles.card, styles.blockedCard, { borderColor: t.sep2 }]}
-          pressedStyle={{ backgroundColor: t.surface2 }}
-        >
-          <Initial letter="T" size={52} radius={16} muted />
-          <View style={styles.cardText}>
-            <Text style={[styles.cardName, { color: t.ink2 }]}>TikTok</Text>
-            <Text style={{ fontSize: 15, color: t.ink2 }}>Uniquement des vidéos courtes</Text>
-          </View>
-          <View style={[styles.badge, { backgroundColor: t.surface2 }]}>
-            <Text style={{ fontSize: 13, fontWeight: '600', color: t.ink2 }}>Bloqué</Text>
-          </View>
-        </PressScale>
       </View>
 
       <View style={{ flex: 1, minHeight: 16 }} />
@@ -125,10 +109,8 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: 'transparent',
   },
-  blockedCard: { backgroundColor: 'transparent', borderStyle: 'dashed' },
   cardText: { flex: 1, gap: 3 },
   cardName: { fontSize: 20, fontWeight: '600', letterSpacing: -0.2 },
-  badge: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
   unread: { minWidth: 24, height: 24, borderRadius: 12, paddingHorizontal: 7, alignItems: 'center', justifyContent: 'center' },
   footer: { fontSize: 13, lineHeight: 18, textAlign: 'center', paddingHorizontal: 12 },
 });

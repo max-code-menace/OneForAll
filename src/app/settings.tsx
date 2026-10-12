@@ -53,7 +53,7 @@ export default function SettingsScreen() {
 
         {platforms.map((p) => (
           <View key={p.id} style={styles.section}>
-            <SectionTitle initial={p.name[0]}>{p.name}</SectionTitle>
+            <SectionTitle platformId={p.id}>{p.name}</SectionTitle>
             <Card>
               {p.rules.map((rule, i) => (
                 <SwitchRow
@@ -68,24 +68,6 @@ export default function SettingsScreen() {
             </Card>
           </View>
         ))}
-
-        <View style={styles.section}>
-          <SectionTitle initial="T">TikTok</SectionTitle>
-          <Card>
-            <View style={styles.fixedRow}>
-              <View style={{ flex: 1, gap: 3 }}>
-                <Text style={[styles.label, { color: t.ink }]}>TikTok est toujours bloqué</Text>
-                <Text style={[styles.description, { color: t.ink2 }]}>
-                  Il n’y a que des vidéos courtes sur TikTok. Ses liens ne s’ouvrent jamais, d’où qu’ils viennent. Ce
-                  blocage ne se désactive pas.
-                </Text>
-              </View>
-              <View style={[styles.badge, { backgroundColor: t.surface2 }]}>
-                <Text style={{ fontSize: 13, fontWeight: '600', color: t.ink2 }}>Bloqué</Text>
-              </View>
-            </View>
-          </Card>
-        </View>
 
         <View style={styles.section}>
           <SectionTitle>Notifications</SectionTitle>
@@ -223,8 +205,6 @@ const styles = StyleSheet.create({
   section: { gap: 10 },
   label: { fontSize: 17, lineHeight: 22 },
   description: { fontSize: 13, lineHeight: 18 },
-  fixedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
-  badge: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 44 },
   status: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   statusIcon: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
