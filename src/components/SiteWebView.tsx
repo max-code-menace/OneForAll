@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
@@ -12,12 +12,16 @@ import { findUrlAction, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
 import { Toast, type ToastHandle } from './Toast';
 
+/**
+ * Se présenter comme Safari, avec la VRAIE version d'iOS du téléphone.
+ * WKWebView compose déjà le début (« Mozilla/5.0 (iPhone; CPU iPhone OS …) AppleWebKit/… ») ;
+ * on remplace seulement la fin (« Mobile/15E148 ») par celle de Safari. Une version écrite
+ * en dur (ancienne) ne correspond plus au moteur réel : c'est un signal de robot.
+ */
+const SAFARI_APP_NAME = `Version/${String(RNPlatform.Version).split('.').slice(0, 2).join('.')} Mobile/15E148 Safari/604.1`;
+
 type Props = {
   platform: Platform;
-  /** Prévient l'écran parent quand on peut revenir en arrière dans le site. */
-  onCanGoBackChange?: (canGoBack: boolean) => void;
-  /** Donne au parent les commandes "retour" et "recharger". */
-  controlsRef?: React.RefObject<{ goBack: () => void; reload: () => void } | null>;
   /** Bandeau affiché 0,5 s après l'ouverture et à chaque rechargement (ex. « Reels masqués »). */
   welcome?: string;
 };
@@ -26,7 +30,7 @@ type Props = {
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome }: Props) {
+export function SiteWebView({ platform, welcome }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -37,16 +41,6 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
 
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
   const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
-
-  if (controlsRef) {
-    controlsRef.current = {
-      goBack: () => webRef.current?.goBack(),
-      reload: () => {
-        webRef.current?.reload();
-        if (welcome) toast.current?.show(welcome, 500);
-      },
-    };
-  }
 
   // À l'ouverture : rappel discret de ce qui est masqué.
   useEffect(() => {
@@ -88,13 +82,13 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
       if (msg.type === 'blocked') showBanner(msg.label ?? 'Page bloquée');
       if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
       if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
+      if (msg.type === 'feedLocked') showBanner('Les vidéos suivantes sont bloquées');
     } catch {
       // message qui ne vient pas de nous : on l'ignore
     }
   }
 
   function onNavigationStateChange(nav: WebViewNavigation) {
-    onCanGoBackChange?.(nav.canGoBack);
     const u = parseUrl(nav.url);
     if (u) setPath(u.path);
   }
@@ -107,7 +101,8 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
         ref={webRef}
         style={styles.flex}
         source={{ uri: platform.startUrl }}
-        userAgent={platform.userAgent}
+        // Plateformes qui refusent les WebView (Google, Facebook) : on se présente comme Safari.
+        applicationNameForUserAgent={platform.userAgent ? SAFARI_APP_NAME : undefined}
         // --- Rester connecté -----------------------------------------------
         sharedCookiesEnabled
         thirdPartyCookiesEnabled
@@ -123,8 +118,11 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
         // --- Confort -------------------------------------------------------
-        allowsBackForwardNavigationGestures
+        // Le glissement depuis le bord gauche ramène à OneForAll (geste de la pile d'écrans),
+        // pas en arrière dans le site : les sites ont leurs propres flèches de retour.
+        allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
+        // Tirer la page vers le bas = recharger.
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
       />

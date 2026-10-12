@@ -44,12 +44,14 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   (définitif chez Apple).
 - Un premier build « production » a été envoyé à TestFlight, avec l'utilisateur comme testeur interne (aucune revue Apple).
 - Dans App Store Connect, le nom de la fiche est provisoire (« OneForAll » était pris). Le nom sous l'icône reste « OneForAll ».
-- Un **nouveau build** est nécessaire pour livrer : le bannissement TikTok, le mode diagnostic, le nouveau design
-  et Facebook (code natif, pas des règles). Ces changements sont sur la branche `claude/beautiful-mayer-mvofmc` :
-  il faut les **fusionner dans `main`** avant le build (sinon `git pull` sur `main` ne les ramène pas, et
-  `facebook.json` absent de `main` fait afficher « Vérification impossible » dans les Réglages).
-  Commandes que l'utilisateur lance **lui-même sous Windows (PowerShell), dans le dossier OneForAll** :
+- **Build 3** (design, Facebook, TikTok banni, diagnostic) livré sur TestFlight et installé par l'utilisateur.
+- `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
+- La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
+  de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
+- Tout changement de code (hors règles JSON) demande un nouveau build. Commandes que l'utilisateur lance
+  **lui-même sous Windows (PowerShell), dans le dossier OneForAll** :
   ```
+  git checkout main
   git pull --no-rebase --no-edit
   eas build --platform ios --profile production
   eas submit --platform ios --latest
@@ -58,24 +60,44 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 
 ## Retours de test de l'utilisateur (iPhone)
 - OK : onglet Reels masqué (Instagram), onglet Shorts masqué (YouTube), recherche Instagram sans grille Explore, DMs OK.
+- Build 3 OK : icône, lancement animé, présentation, accueil 4 cartes, écran TikTok bloqué, connexion Instagram gardée.
+  Mode sombre OK. Bandeau « Reels masqués » pas encore vérifié.
 - **Problème ouvert** : un Reel reçu en message privé s'ouvre, et on peut descendre vers d'autres Reels. Le blocage par
   adresse n'a pas déclenché ; hypothèse non vérifiée : Instagram l'ouvre dans une fenêtre sans changer l'adresse.
   Il faut le **chemin affiché par le mode diagnostic** (Réglages → Diagnostic) sur la nouvelle version.
-  L'utilisateur doit choisir : **A** voir le Reel envoyé mais pas les suivants, ou **B** aucun Reel du tout.
+  **Choix de l'utilisateur : A** (voir le Reel envoyé, mais pas les suivants). **Confirmé par le diagnostic** :
+  l'adresse reste `/direct/t/<id>/` pendant le Reel puis pendant les « Suggestions » qui suivent.
+  Réponse (pas encore buildée) : champ de règle `lockVideoFeed` + règles `ig.reelSwipe` / `fb.reelSwipe`. Le moteur
+  repère une vidéo qui occupe l'écran (≥ 90 % largeur, ≥ 75 % hauteur) et bloque le glissement vertical commencé
+  dessus (défilement natif + gestionnaires du site) ; les panneaux sans vidéo (commentaires) restent libres.
+  Testé seulement sur une fausse page (Chromium). Non testé sur le vrai Instagram.
 - **Facebook** (ajouté à la demande de l'utilisateur) : règles écrites sans aucun test sur le vrai site
-  (`m.facebook.com`). À vérifier sur iPhone. La connexion Facebook dans une WebView peut aussi poser problème.
+  (`m.facebook.com`). **Connexion bloquée** par une « vérification robot » à cases à cocher, alors que chez le
+  concurrent SocialLite un contrôle invisible passe tout seul. Hypothèse (non vérifiée) : notre user-agent Safari
+  était figé sur iOS 18, incohérent avec le vrai moteur. Corrigé (à builder) : `applicationNameForUserAgent` avec la
+  vraie version d'iOS (SiteWebView.tsx). Si ça ne suffit pas : regarder les fenêtres pop-up
+  (`javaScriptCanOpenWindowsAutomatically`, `onOpenWindow`).
+- Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre ; glisser
+  depuis le bord gauche = retour à OneForAll ; tirer vers le bas = recharger ; astuce affichée à la 1re ouverture.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
+- Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
+  (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,
+  anti-boucle `isAlreadyThere`), pubs masquées (`ig.ads`, texte « Sponsorisé »…), suggestions masquées par défaut,
+  compteur de temps du jour sur l'accueil (`src/lib/usage.ts`, local), bouton rond flottant pour revenir, bandeau
+  « Les vidéos suivantes sont bloquées ». Refusé : blocage des vraies apps (autorisation Apple Screen Time),
+  notifications (serveur = collecte). L'utilisateur trouve leur Instagram « plus centré » : capture de notre
+  accueil Instagram demandée pour comparer.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 
 ## À faire (par ordre)
-1. L'utilisateur lance le nouveau build, active le diagnostic, envoie une capture du Reel ouvert → corriger la règle.
-2. Design appliqué + Facebook ajouté (branche `claude/beautiful-mayer-mvofmc`) : fusionner dans `main`, faire le build,
-   puis l'utilisateur vérifie sur iPhone (lancement, présentation, mode sombre, Facebook).
-3. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
-4. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
-5. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub
+1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
+2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
+3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook).
+4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
+5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
+6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub
    (les règles de `main` tournent chez tout le monde) et authentification à deux facteurs.
-6. Supprimer à la main l'ancienne branche `claude/ios-social-media-blocker-g3r1w6` du dépôt `martin-bois`
+7. Supprimer à la main l'ancienne branche `claude/ios-social-media-blocker-g3r1w6` du dépôt `martin-bois`
    (la session n'a pas pu la supprimer). Ne touche à rien d'autre dans ce dépôt.
 
 ## Comment travailler avec l'utilisateur

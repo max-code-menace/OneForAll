@@ -9,6 +9,18 @@
   "color": "#C13584",
   "rules": [
     {
+      "id": "ig.followingFeed",
+      "label": "Fil : seulement les gens que tu suis",
+      "description": "L’accueil s’ouvre sur le fil « Abonnements » : les publications des comptes que tu suis, des plus récentes aux plus anciennes, sans recommandations.",
+      "defaultEnabled": true,
+      "urls": [
+        {
+          "pattern": "^/$",
+          "redirectTo": "/?variant=following"
+        }
+      ]
+    },
+    {
       "id": "ig.reelsTab",
       "label": "Masquer l'onglet Reels",
       "description": "Retire le bouton Reels de la barre de navigation.",
@@ -41,6 +53,13 @@
           "redirectTo": "/"
         }
       ]
+    },
+    {
+      "id": "ig.reelSwipe",
+      "label": "Pas de défilement vers d’autres Reels",
+      "description": "Un Reel reçu en message s’ouvre, mais tu ne peux pas glisser vers les Reels suivants.",
+      "defaultEnabled": true,
+      "lockVideoFeed": true
     },
     {
       "id": "ig.explore",
@@ -99,10 +118,38 @@
       ]
     },
     {
+      "id": "ig.ads",
+      "label": "Masquer les publicités",
+      "description": "Retire les publications « Sponsorisé » du fil.",
+      "defaultEnabled": true,
+      "hide": [
+        {
+          "selector": "article span",
+          "text": "Sponsorisé",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Sponsored",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Publicité",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Ad",
+          "closest": "article"
+        }
+      ]
+    },
+    {
       "id": "ig.suggestedPosts",
       "label": "Masquer les posts suggérés",
-      "description": "Retire les blocs « Suggestions pour vous » (désactivé par défaut).",
-      "defaultEnabled": false,
+      "description": "Retire les publications « Suggestions pour vous » de comptes que tu ne suis pas.",
+      "defaultEnabled": true,
       "hide": [
         {
           "selector": "article span",
@@ -112,6 +159,11 @@
         {
           "selector": "article span",
           "text": "Suggestions pour vous",
+          "closest": "article"
+        },
+        {
+          "selector": "article span",
+          "text": "Suggéré pour vous",
           "closest": "article"
         }
       ]

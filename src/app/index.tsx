@@ -1,4 +1,5 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,12 +8,20 @@ import { Initial, PressScale, Wordmark } from '../components/ui';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
+import { formatDuration, readUsage } from '../lib/usage';
 
 /** Écran d'accueil : une carte par réseau social, et TikTok (bloqué). */
 export default function HomeScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { platforms } = useRules();
+  /** Temps passé aujourd'hui sur chaque réseau (compté sur le téléphone, rien n'est envoyé). */
+  const [usage, setUsage] = useState<Record<string, number>>({});
+  useFocusEffect(
+    useCallback(() => {
+      readUsage().then(setUsage);
+    }, []),
+  );
 
   return (
     <ScrollView
@@ -48,6 +57,9 @@ export default function HomeScreen() {
             <View style={styles.cardText}>
               <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
               <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
+              {(usage[p.id] ?? 0) >= 60 && (
+                <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
+              )}
             </View>
             <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
           </PressScale>

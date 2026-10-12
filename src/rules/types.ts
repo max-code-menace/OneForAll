@@ -61,6 +61,12 @@ export type Rule = {
   rewriteLinks?: RewriteLinkRule[];
   /** Redirections / blocages d'URL. */
   urls?: UrlRule[];
+  /**
+   * Empêche de glisser verticalement d'une vidéo plein écran à la suivante
+   * (Reel ouvert depuis un message : on le voit, mais pas les suivants).
+   * Ne dépend pas du HTML du site : le moteur repère une vidéo qui occupe l'écran.
+   */
+  lockVideoFeed?: boolean;
 };
 
 export type Platform = {
@@ -73,7 +79,9 @@ export type Platform = {
   /** Couleur du bouton sur l'accueil. */
   color: string;
   /**
-   * User-agent optionnel. Utile pour YouTube et Facebook : Google (et Facebook) refusent la connexion
+   * User-agent optionnel. S'il est présent, l'app se présente comme Safari, avec la vraie
+   * version d'iOS du téléphone (voir SiteWebView.tsx) : la chaîne elle-même n'est plus
+   * utilisée telle quelle. Utile pour YouTube et Facebook : Google (et Facebook) refusent la connexion
    * depuis une WebView « reconnue », on se présente donc comme Safari iOS.
    */
   userAgent?: string;

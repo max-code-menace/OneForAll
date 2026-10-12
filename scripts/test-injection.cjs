@@ -46,6 +46,9 @@ function urlTests() {
   assert.equal(t('https://www.instagram.com/explore/'), 'https://www.instagram.com/explore/search/');
   assert.equal(t('https://www.instagram.com/martin/reels/'), 'https://www.instagram.com/martin/');
   assert.equal(t('https://www.instagram.com/martin/'), null);
+  assert.equal(t('https://www.instagram.com/'), 'https://www.instagram.com/?variant=following');
+  assert.equal(t('https://www.instagram.com/?variant=following'), null); // pas de boucle
+  assert.equal(t('https://www.instagram.com/?hl=fr&variant=following'), null);
   assert.equal(t('https://www.instagram.com/reelsfan/'), null); // pseudo qui commence par "reels"
   assert.equal(t('https://www.instagram.com/direct/inbox/'), null);
   assert.equal(t('https://www.instagram.com/p/ABC/'), null);
@@ -95,7 +98,7 @@ function validationTests() {
 
   // Les fichiers du dépôt sont valides, et css en liste de lignes est bien rassemblé.
   for (const p of PLATFORMS) mergeRemoteRules(p, rawOf(p.id));
-  assert.match(base('instagram').rules[0].css, /display: none !important;/);
+  assert.match(base('instagram').rules.find((x) => x.id === 'ig.reelsTab').css, /display: none !important;/);
 
   const bad = (label, id, mutate) => {
     const raw = clone(rawOf(id));
@@ -104,10 +107,10 @@ function validationTests() {
   };
   bad('CSS avec url()', 'instagram', (r) => (r.rules[0].css = ['a { background: url(https://evil.example/x) }']));
   bad('CSS avec @import', 'instagram', (r) => (r.rules[0].css = ['@import "https://evil.example/x.css";']));
-  bad('redirection hors site', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = '//evil.example/'));
-  bad('redirection https', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = 'https://evil.example/'));
-  bad('regex invalide', 'instagram', (r) => (r.rules[1].urls[0].pattern = '('));
-  bad('lien réécrit hors site', 'instagram', (r) => (r.rules[3].rewriteLinks[0].href = 'https://evil.example/'));
+  bad('redirection hors site', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = '//evil.example/'));
+  bad('redirection https', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].redirectTo = 'https://evil.example/'));
+  bad('regex invalide', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '('));
+  bad('lien réécrit hors site', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.explore').rewriteLinks[0].href = 'https://evil.example/'));
   bad('version de format inconnue', 'instagram', (r) => (r.schemaVersion = 2));
   bad('mauvaise plateforme', 'instagram', (r) => (r.id = 'youtube'));
   bad('id de règle en double', 'instagram', (r) => (r.rules[1].id = r.rules[0].id));
@@ -167,7 +170,9 @@ async function browserTests() {
   }
   const browser = await chromium.launch();
 
-  async function open(url, isEnabled = defaults) {
+  // Le fil « Abonnements » ajoute une redirection de « / » : testé à part, plus bas.
+  const noFollow = (id) => id !== 'ig.followingFeed' && defaults(id);
+  async function open(url, isEnabled = noFollow) {
     const page = await browser.newPage();
     // Toutes les requêtes reçoivent nos fausses pages (aucun accès réseau).
     await page.route('**/*', (route) => {
@@ -243,9 +248,85 @@ async function browserTests() {
     await page.close();
   }
 
+  // Fil « Abonnements » : « / » devient « /?variant=following », une seule fois (pas de boucle).
+  page = await open('https://www.instagram.com/', defaults);
+  let loads = 0;
+  page.on('load', () => loads++);
+  await page.waitForTimeout(1200);
+  assert.equal(pathOf(page), '/?variant=following', 'accueil -> fil Abonnements');
+  assert.equal(loads, 0, 'pas de redirection en boucle');
+  await page.close();
+
+  // Publicités : un post « Sponsorisé » est masqué, un post normal reste.
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<article id="ad"><header><span>marque</span><span>Sponsorisé</span></header></article>' +
+      '<article id="friend"><header><span>martin</span><span>Paris</span></header></article>');
+  });
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#ad'), true, 'publicité masquée');
+  assert.equal(await hidden(page, '#friend'), false, 'post d’un ami visible');
+  await page.close();
+
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');
+  await page.close();
+
+  // --- Reel ouvert depuis un message (même adresse que la conversation) ---
+  // Fil de vidéos plein écran + panneau de commentaires ; on glisse du doigt (CDP).
+  async function openViewer(isEnabled) {
+    const p = await browser.newPage({ hasTouch: true, viewport: { width: 390, height: 800 } });
+    await p.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head></head><body style="margin:0">
+      <div id="viewer" style="position:fixed;inset:0;overflow-y:scroll;scroll-snap-type:y mandatory">
+        <div style="height:100vh;scroll-snap-align:start"><video style="display:block;width:100%;height:100%"></video></div>
+        <div style="height:100vh;scroll-snap-align:start"><video style="display:block;width:100%;height:100%"></video></div>
+      </div>
+      <div id="comments" style="position:fixed;left:0;bottom:0;width:100%;height:200px;overflow-y:scroll;background:#fff">
+        <div style="height:1000px">commentaires</div>
+      </div>
+      <script>
+        window.__siteMoves = 0;
+        document.getElementById('viewer').addEventListener('touchmove', () => window.__siteMoves++);
+      </script></body></html>` }));
+    await p.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await p.addInitScript(buildInjectedScript(PLATFORMS, isEnabled));
+    await p.goto('https://www.instagram.com/direct/t/123/');
+    await p.waitForTimeout(250);
+    return p;
+  }
+  async function swipe(p, x, y1, y2) {
+    const cdp = await p.context().newCDPSession(p);
+    const pt = (y) => [{ x, y }];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: pt(y1) });
+    for (let i = 1; i <= 8; i++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: pt(y1 + ((y2 - y1) * i) / 8) });
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await p.waitForTimeout(400);
+  }
+  const scrollTop = (p, sel) => p.$eval(sel, (el) => el.scrollTop);
+
+  page = await openViewer(() => false); // témoin : sans la règle, le glissement fait défiler
+  await swipe(page, 200, 500, 100);
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'témoin : le glissement fait défiler sans la règle');
+  await page.close();
+
+  page = await openViewer(defaults);
+  await swipe(page, 200, 500, 100);
+  assert.equal(await scrollTop(page, '#viewer'), 0, 'pas de défilement vers le Reel suivant');
+  assert.equal(await page.evaluate(() => window.__siteMoves), 0, 'le site ne reçoit pas le geste vertical');
+  assert.ok((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'feedLocked'), 'l’app est prévenue');
+  await swipe(page, 200, 780, 640); // dans les commentaires : défilement libre
+  assert.ok((await scrollTop(page, '#comments')) > 0, 'les commentaires défilent');
+  // Vidéos du fil (format 4:5, ~60 % de la hauteur) : on défile normalement.
+  await page.evaluate(() => document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '60vh')));
+  await swipe(page, 200, 500, 100);
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'le fil avec des vidéos normales défile');
   await page.close();
 
   // --- YouTube ---
