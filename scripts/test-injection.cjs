@@ -343,6 +343,23 @@ async function browserTests() {
   assert.equal(await hidden(page, '#friend'), false, 'post d’un ami visible');
   await page.close();
 
+  // Barre d'onglets : la case du Reels disparaît entièrement, sans laisser de trou.
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div id="bar" style="display:flex;justify-content:space-around;width:300px">' +
+      ['/', '/explore/', '/reels/', '/direct/inbox/', '/martin/'].map((h, i) =>
+        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span></div>').join('') +
+      '</div>');
+  });
+  await page.waitForTimeout(200);
+  assert.equal(await hidden(page, '#slot2'), true, 'case Reels masquée en entier');
+  assert.equal(await hidden(page, '#slot1'), false, 'case Recherche visible');
+  assert.equal(await hidden(page, '#bar'), false, 'barre visible');
+  const widths = await page.$$eval('#bar > .slot', (els) => els.filter((e) => e.offsetParent).map((e) => e.offsetWidth));
+  assert.deepEqual(widths, [75, 75, 75, 75], `4 onglets de même largeur, sans trou (${widths})`);
+  await page.close();
+
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');
