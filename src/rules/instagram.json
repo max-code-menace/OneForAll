@@ -93,8 +93,9 @@
     {
       "id": "ig.feedReels",
       "label": "Masquer les Reels dans le fil",
-      "description": "Retire les posts du fil qui sont des Reels.",
+      "description": "Retire les posts du fil qui sont des Reels. Quand il ne reste plus que des Reels, le fil affiche « Tu as tout vu ».",
       "defaultEnabled": true,
+      "feedEnd": true,
       "hide": [
         {
           "selector": "article a[href*=\"/reel/\"]",

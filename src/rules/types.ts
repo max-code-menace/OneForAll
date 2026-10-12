@@ -69,6 +69,11 @@ export type Rule = {
    * Ne dépend pas du HTML du site : le moteur repère une vidéo qui occupe l'écran.
    */
   lockVideoFeed?: boolean;
+  /**
+   * Fin du fil : quand il ne reste plus que des publications masquées (ex. que des Reels),
+   * affiche « Tu as tout vu » au lieu d'un écran vide qui se charge sans fin.
+   */
+  feedEnd?: boolean;
 };
 
 export type Platform = {

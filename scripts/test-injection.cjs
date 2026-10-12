@@ -360,6 +360,37 @@ async function browserTests() {
   assert.deepEqual(widths, [75, 75, 75, 75], `4 onglets de même largeur, sans trou (${widths})`);
   await page.close();
 
+  // --- Fil plein de Reels : pas d'espace vide, puis « Tu as tout vu » ---
+  // Chaque publication est dans une case de hauteur fixe (comme une liste qui réserve la place).
+  page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head></head><body style="margin:0">
+    <main><div id="list">
+      <div class="row" id="row0" style="min-height:500px"><article id="p0"><a href="/p/A/">photo</a></article></div>
+      <div class="row" id="row1" style="min-height:500px"><article id="p1"><a href="/p/B/">photo</a></article></div>
+      ${Array.from({ length: 15 }, (_, i) => `<div class="row" id="reelrow${i}" style="min-height:500px"><article><a href="/reel/R${i}/">reel</a></article></div>`).join('')}
+    </div></main></body></html>` }));
+  await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+  await page.addInitScript(buildInjectedScript(PLATFORMS, noFollow));
+  await page.goto('https://www.instagram.com/');
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#reelrow0'), true, 'la case du Reel masqué ne laisse pas d’espace vide');
+  assert.equal(await hidden(page, '#row1'), false, 'la case d’une photo reste');
+  assert.equal(await page.evaluate(() => document.getElementById('list').offsetHeight), 1000, 'le fil ne fait que la hauteur des photos');
+  const cardShown = () => page.evaluate(() => {
+    const c = document.getElementById('sans-reels-feed-end');
+    return !!c && getComputedStyle(c).display !== 'none';
+  });
+  assert.equal(await cardShown(), false, 'pas de carte tant qu’on voit encore des photos');
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(200);
+  assert.equal(await cardShown(), true, '« Tu as tout vu » après la dernière photo');
+  assert.match(await page.textContent('#sans-reels-feed-end'), /Tu as tout vu/);
+  await page.click('#sans-reels-feed-end button');
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => window.scrollY), 0, '« Revenir en haut » remonte');
+  assert.equal(await cardShown(), false, 'la carte disparaît en haut du fil');
+  await page.close();
+
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');

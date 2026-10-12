@@ -31,6 +31,7 @@ type InjectedConfig = {
   rewrite: RewriteLinkRule[];
   urls: InjectedUrlRule[];
   lockFeed: boolean;
+  feedEnd: boolean;
 };
 
 export function buildConfig(
@@ -46,6 +47,7 @@ export function buildConfig(
       rewrite: rules.flatMap((r) => r.rewriteLinks ?? []),
       urls: rules.flatMap((r) => (r.urls ?? []).map((u) => ({ ...u, label: r.label, silent: !!r.silent }))),
       lockFeed: rules.some((r) => r.lockVideoFeed),
+      feedEnd: rules.some((r) => r.feedEnd),
     };
   });
 }
@@ -91,7 +93,7 @@ const RUNTIME = `
   }
 
   // Ne garder que la configuration du site actuel.
-  var css = '', hide = [], rewrite = [], urls = [], lockFeed = false;
+  var css = '', hide = [], rewrite = [], urls = [], lockFeed = false, feedEnd = false;
   for (var i = 0; i < ALL.length; i++) {
     if (!hostMatches(location.hostname, ALL[i].hosts)) continue;
     css += ALL[i].css + '\\n';
@@ -99,6 +101,7 @@ const RUNTIME = `
     rewrite = rewrite.concat(ALL[i].rewrite);
     urls = urls.concat(ALL[i].urls);
     lockFeed = lockFeed || ALL[i].lockFeed;
+    feedEnd = feedEnd || ALL[i].feedEnd;
   }
   if (!css.trim() && !hide.length && !rewrite.length && !urls.length && !lockFeed) return;
 
@@ -234,6 +237,19 @@ const RUNTIME = `
 
   // --- 3. Masquage / réécriture en JS -----------------------------------------
 
+  // Case qui ne contient que cet élément : on remonte tant que le parent n'a pas
+  // d'autre enfant (3 niveaux au plus, jamais jusqu'à <main> ou <body>).
+  function rowOf(el) {
+    var t = el;
+    for (var i = 0; i < 3; i++) {
+      var p = t.parentElement;
+      if (!p || p === document.body || p === document.documentElement || p.tagName === 'MAIN') break;
+      if (p.children.length !== 1) break;
+      t = p;
+    }
+    return t;
+  }
+
   function clean() {
     addStyle();
     for (var i = 0; i < hideSels.length; i++) {
@@ -251,6 +267,15 @@ const RUNTIME = `
           if (target.getAttribute('data-sans-reels') === 'hidden') continue;
           target.style.setProperty('display', 'none', 'important');
           target.setAttribute('data-sans-reels', 'hidden');
+          // Publication entière masquée : on masque aussi la case qui ne contenait qu'elle,
+          // sinon le site garde sa place et laisse un grand espace vide dans le fil.
+          if (r.closest) {
+            var row = rowOf(target);
+            if (row !== target) {
+              row.style.setProperty('display', 'none', 'important');
+              row.setAttribute('data-sans-reels-row', 'hidden');
+            }
+          }
         }
       }
     }
@@ -289,9 +314,11 @@ const RUNTIME = `
     if (!checkUrl()) {
       clean();
       if (armVideos) armVideos();
+      if (checkFeedEnd) checkFeedEnd();
     }
   }
   var armVideos = null; // défini plus bas si le blocage du glissement est actif
+  var checkFeedEnd = null; // défini plus bas si « Tu as tout vu » est actif
 
   // Regroupe les nombreux changements de la page en un seul nettoyage.
   var timer = null;
@@ -420,6 +447,72 @@ const RUNTIME = `
     }, true);
     window.addEventListener('touchend', function () { gesture = null; }, { capture: true, passive: true });
     window.addEventListener('touchcancel', function () { gesture = null; }, { capture: true, passive: true });
+  }
+
+  // --- 6. Fin du fil : « Tu as tout vu » ------------------------------------------
+  // Quand beaucoup de comptes suivis publient des Reels (masqués), le fil n'a plus
+  // rien à montrer mais se charge sans fin. Une fois la dernière publication visible
+  // passée, et s'il ne reste après elle que des publications masquées (au moins
+  // FEED_END_MIN), une carte l'indique. Elle est posée PAR-DESSUS la page (dans
+  // <body>, hors du contenu géré par le site), et disparaît quand on remonte.
+  if (feedEnd) {
+    var FEED_END_MIN = 12;
+    var card = null, endQueued = false;
+    var buildCard = function () {
+      var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var c = document.createElement('div');
+      c.id = 'sans-reels-feed-end';
+      c.setAttribute('role', 'status');
+      c.setAttribute('style',
+        'position:fixed;left:24px;right:24px;bottom:28%;z-index:2147483646;display:none;' +
+        'flex-direction:column;align-items:center;gap:8px;padding:20px;border-radius:20px;text-align:center;' +
+        'font-family:-apple-system,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);' +
+        (dark ? 'background:#211F1C;color:#F2EEE8;' : 'background:#FFFDFA;color:#1F1D1A;'));
+      var title = document.createElement('div');
+      title.setAttribute('style', 'font-size:20px;font-weight:700');
+      title.textContent = '✓ Tu as tout vu';
+      var text = document.createElement('div');
+      text.setAttribute('style', 'font-size:15px;line-height:21px;opacity:.75');
+      text.textContent = 'Plus bas, il n’y a que des Reels et des contenus masqués par OneForAll.';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('style',
+        'margin-top:6px;min-height:44px;padding:0 20px;border:0;border-radius:22px;font-size:16px;font-weight:600;' +
+        (dark ? 'background:#8FBFA9;color:#10201A;' : 'background:#3E6B5A;color:#FFFFFF;'));
+      btn.textContent = 'Revenir en haut';
+      btn.addEventListener('click', function () {
+        var first = document.getElementsByTagName('article')[0];
+        if (first && first.scrollIntoView) first.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+      c.appendChild(title);
+      c.appendChild(text);
+      c.appendChild(btn);
+      return c;
+    };
+    checkFeedEnd = function () {
+      endQueued = false;
+      var show = false;
+      if (location.pathname === '/') {
+        var arts = document.getElementsByTagName('article'), lastVisible = -1, hiddenAfter = 0;
+        for (var i = 0; i < arts.length; i++) {
+          if (arts[i].getAttribute('data-sans-reels') === 'hidden') hiddenAfter++;
+          else { lastVisible = i; hiddenAfter = 0; }
+        }
+        if (hiddenAfter >= FEED_END_MIN) {
+          show = lastVisible < 0 || arts[lastVisible].getBoundingClientRect().bottom < window.innerHeight * 0.6;
+        }
+      }
+      if (show && !card && document.body) card = buildCard();
+      if (card && !card.isConnected && document.body) document.body.appendChild(card);
+      if (card) card.style.display = show ? 'flex' : 'none';
+    };
+    // Défilement (de la page ou d'un conteneur) : vérifié au plus une fois par image, sans freiner.
+    window.addEventListener('scroll', function () {
+      if (endQueued) return;
+      endQueued = true;
+      requestAnimationFrame(checkFeedEnd);
+    }, { capture: true, passive: true });
   }
 
   // d) Filet de sécurité si une navigation nous échappe.

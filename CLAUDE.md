@@ -127,6 +127,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   plus la page (supposé sur le vrai Instagram). Écouteurs de geste non passifs posés seulement sur le conteneur
   d'une vidéo plein écran (avant : sur toute la page, iOS attendait le script à chaque défilement). Nettoyage :
   chaque sélecteur cherché une fois.
+- **Fil Instagram plein de Reels** (constaté par l'utilisateur sur le build 5) : les Reels masqués laissaient de grands
+  espaces vides (leur case gardait sa place) et le fil « Suivi(e) » se chargeait sans fin. Fait (à builder, testé sur
+  fausse page) : la case qui ne contient que la publication masquée est masquée aussi (`rowOf`, 3 niveaux max) ; champ
+  de règle `feedEnd` (sur `ig.feedReels`) : carte « Tu as tout vu » + « Revenir en haut » quand, après la dernière
+  publication visible, il n'y a que des publications masquées (au moins 12). Barre d'onglets : la case du lien Reels
+  est masquée aussi (`:has`, règle JSON seule), plus de trou entre Recherche et Messages.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
   - Sécurité des règles téléchargées : libellés/descriptions sans `< > &` et page bloquée construite sans HTML ;

@@ -191,6 +191,10 @@ function sanitizeRule(raw: unknown, index: number): Rule {
     if (typeof raw.silent !== 'boolean') fail(`${name}.silent`, 'vrai/faux attendu');
     if (raw.silent) rule.silent = true;
   }
+  if (raw.feedEnd !== undefined) {
+    if (typeof raw.feedEnd !== 'boolean') fail(`${name}.feedEnd`, 'vrai/faux attendu');
+    if (raw.feedEnd) rule.feedEnd = true;
+  }
   if (raw.lockVideoFeed !== undefined) {
     if (typeof raw.lockVideoFeed !== 'boolean') fail(`${name}.lockVideoFeed`, 'vrai/faux attendu');
     if (raw.lockVideoFeed) rule.lockVideoFeed = true;
