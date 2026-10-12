@@ -13,6 +13,7 @@ import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
 import { syncAppBadge } from '../lib/backgroundCheck';
 import { fetchInstagramUnread, isBadgeEnabled, readUnread, saveUnread } from '../lib/unread';
+import { testVersionLabel } from '../lib/testUpdates';
 import { formatDuration, readUsage } from '../lib/usage';
 
 const TOUR: TourStep[] = [
@@ -145,6 +146,9 @@ export default function HomeScreen() {
         Reels, Shorts, vidéos courtes et Explore sont masqués. DMs, profils, recherche et publication restent
         disponibles.
       </Text>
+      {testVersionLabel() && (
+        <Text style={[styles.footer, { color: t.accent, fontWeight: '600' }]}>{testVersionLabel()}</Text>
+      )}
       {tour.element}
     </ScrollView>
   );
