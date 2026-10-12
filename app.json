@@ -16,7 +16,7 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.maxcodemenace.oneforall",
       "infoPlist": {
-        "NSCameraUsageDescription": "Pour prendre une photo ou une vidéo à publier sur Instagram.",
+        "NSCameraUsageDescription": "Pour prendre une photo ou une vidéo à publier sur Instagram ou Facebook.",
         "NSPhotoLibraryUsageDescription": "Pour choisir une photo ou une vidéo à publier.",
         "NSMicrophoneUsageDescription": "Pour enregistrer le son des vidéos que tu publies.",
         "ITSAppUsesNonExemptEncryption": false

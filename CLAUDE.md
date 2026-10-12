@@ -16,6 +16,8 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/rules/validate.ts` : validation stricte (pas de code, pas de `url()` dans le CSS, redirections
   limitées au même site). Un fichier distant ne peut changer que `rules`, jamais l'adresse ni les domaines.
 - `src/lib/banned.ts` : sites bannis (TikTok), **codés en dur**, non modifiables à distance.
+  `INSIDE_HOSTS` (`src/lib/sites.ts`, en dur aussi) : domaines de connexion gardés dans l'app ; tout autre
+  site (hors réseaux) s'ouvre dans Safari.
 - `src/lib/buildInjection.ts` : script injecté dans les pages (CSS, MutationObserver, redirections, signalement du chemin).
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
@@ -47,6 +49,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 - Un premier build « production » a été envoyé à TestFlight, avec l'utilisateur comme testeur interne (aucune revue Apple).
 - Dans App Store Connect, le nom de la fiche est provisoire (« OneForAll » était pris). Le nom sous l'icône reste « OneForAll ».
 - **Build 3** (design, Facebook, TikTok banni, diagnostic) livré sur TestFlight et installé par l'utilisateur.
+- **Build 4** fabriqué (PR 2 et 3 fusionnées : plein écran, onglets au glissement, tuto, Reels en DM bloqués, fil
+  Abonnements, pubs, temps du jour, pastille et notifications, icônes, TikTok retiré de l'interface, user-agent
+  Facebook). Envoi à TestFlight à confirmer avec l'utilisateur ; pas encore testé sur iPhone.
+- Invitation de la sœur en cours : groupe de test **externe** + **lien public** TestFlight (revue bêta Apple
+  demandée ; textes de « Test Information » fournis). Prochaine étape : activer le lien public et l'envoyer.
+- Branche `claude/beautiful-mayer-mvofmc` : 1 commit non fusionné (« Revoir la présentation » relance le tuto),
+  à regrouper avec les corrections issues des tests du build 4 dans une prochaine PR.
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
@@ -59,6 +68,11 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   eas submit --platform ios --latest
   ```
 - Les corrections de **règles** (JSON sur `main`) arrivent sans nouveau build.
+- ⚠️ **Les règles de `main` tournent aussi sur les ANCIENNES versions installées.** Vérifié : le build 3 n'a pas
+  l'anti-boucle (`isAlreadyThere`), donc `ig.followingFeed` (`/` → `/?variant=following`) y recharge la page sans fin
+  (page Instagram blanche). Avant d'ajouter une règle, vérifier qu'elle ne casse pas les builds plus anciens.
+- Le 12/10, les captures de l'utilisateur montraient encore le **build 3** (barre du haut, carte TikTok « Bloqué »),
+  et pas le build 4 : le build 4 n'était donc pas installé sur son iPhone (TestFlight à vérifier).
 
 ## Retours de test de l'utilisateur (iPhone)
 - OK : onglet Reels masqué (Instagram), onglet Shorts masqué (YouTube), recherche Instagram sans grille Explore, DMs OK.
@@ -86,6 +100,7 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   OneForAll (geste de retour iOS coupé sur cet écran) ; tirer vers le bas = recharger. **Petit tuto** la 1re fois
   sur l'accueil, un site et les Réglages (`src/components/Tour.tsx`, `oneforall:tour-seen:v1`), il remplace l'astuce
   « glisser ». Onglet Profil d'Instagram trouvé par la photo de profil (alt « profil »/« profile ») : non vérifié.
+  Réglages → « Revoir la présentation » remet aussi le tuto à zéro (`resetTours`) : fait après le build 4, à builder.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
 - Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
   (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,
@@ -103,12 +118,40 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   `NSHTTPCookieStorage`, utilisé par `fetch`). Nouveaux modules natifs : expo-background-fetch, expo-task-manager,
   expo-notifications (plugin `expo-background-fetch` dans app.json, pas de push donc pas de plugin notifications).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
+- **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
+  - Sécurité des règles téléchargées : libellés/descriptions sans `< > &` et page bloquée construite sans HTML ;
+    CSS sans `\` ni `@` (sauf `@media`), ni `url(`/`image(`/`src(` ; regex sans répétition imbriquée ni
+    référence arrière ; cibles de redirection : seuls `$1`-`$9`, et cible revérifiée APRÈS remplacement
+    (`isSafeTarget` dans urlRules.ts + `safeTarget` dans le script injecté). Nouveau champ de règle `silent`
+    (pas de bandeau ; ignoré sans risque par les anciennes versions) sur `ig.followingFeed`.
+  - Messages page → app : écoutés seulement sur les domaines des réseaux, valeurs vérifiées.
+  - Bords : le glissement est repéré DANS la page (message `edgeSwipe`), plus de zones posées sur la WebView
+    (elles avalaient les appuis des boutons du site au bord de l'écran).
+  - Liens externes → Safari ; écran « Pas de connexion » en français avec « Réessayer » ; le script est figé à
+    l'ouverture du site (plus de rechargement si des règles arrivent pendant qu'on est dessus).
+  - Pastille Instagram **désactivée par défaut** (Réglages → Messages Instagram), PRIVACY.md et textes corrigés
+    (l'app contactait Instagram à chaque accueil alors qu'elle disait « ne contacte personne »).
+  - Notifications : vérifie que l'actualisation en arrière-plan est permise ; chiffre de l'icône mis à jour app
+    ouverte. `expo-background-fetch` est déprécié par Expo : migration vers `expo-background-task` NON faite.
+  - Profil Instagram : la plus petite photo de profil la plus basse (barre du bas), pas celles des stories.
+    YouTube : « Bibliothèque » → « Vous » (`/feed/you`). Stories exclues du blocage de glissement ; le
+    glissement horizontal sur une vidéo n'est plus bloqué.
+  - Accessibilité : cartes de l'accueil lues en entier, interrupteurs lus une fois, bandeau annoncé par VoiceOver,
+    pages de présentation qui défilent en très grand texte.
+  - `npm run test:inject` échoue désormais sans Playwright (sauf `SANS_NAVIGATEUR=1`).
+  - Non corrigé (choix de l'utilisateur ou hors code) : icônes ressemblant aux logos, protection de `main` + 2FA,
+    vulnérabilités npm (outils de dev ; ne JAMAIS lancer `npm audit fix --force`).
 
 ## À faire (par ordre)
-1. Fait (à builder) : blocage du défilement des Reels ouverts depuis un DM.
-2. Recevoir la capture de la vérification robot Facebook → trouver une solution.
-3. Puis un build 4 avec tout ça (barre du haut supprimée, idées reprises de SocialLite, user-agent Facebook,
-   pastille et notifications). La PR 2 est fusionnée ; les notifications sont dans une PR suivante.
+0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
+   Puis build 5 avec les corrections de l'audit, et vérifier sur iPhone : boutons au bord de l'écran, glisser
+   depuis les bords, connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
+1. Retours de test du build 4 (utilisateur et sa sœur) : tuto, onglets au glissement (dont Profil Instagram),
+   Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
+   connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).
+2. Finir l'invitation TestFlight de la sœur (lien public après la revue bêta) ; si Apple refuse à cause des icônes
+   ressemblant aux logos, les remplacer.
+3. Comparer notre accueil Instagram à celui de SocialLite (« plus centré ») : capture demandée.
 4. Statut de commerçant (UE) à renseigner dans App Store Connect (bandeau d'avertissement) : décision de l'utilisateur.
 5. Inviter ses proches : TestFlight, lien public (revue bêta d'Apple possible) ou testeurs internes.
 6. Lien de don (compléter `.github/FUNDING.yml` et le README), version Android, protection de la branche `main` sur GitHub

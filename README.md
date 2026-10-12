@@ -29,7 +29,8 @@ défilement infini, donc l'app refuse d'ouvrir ses liens, d'où qu'ils viennent.
 | ✅ | Instagram : fil « Abonnements » (les gens que tu suis), publicités et suggestions masquées. |
 | ✅ | Un Reel reçu en message s'ouvre, mais on ne peut pas glisser vers les suivants. |
 | ✅ | Temps passé aujourd'hui sur chaque réseau, compté uniquement sur ton téléphone. |
-| ✅ | Pastille des messages Instagram non lus, et notifications (en option, avec du retard), sans aucun serveur. |
+| ✅ | Pastille des messages Instagram non lus, et notifications (en option, désactivées par défaut, avec du retard), sans aucun serveur. |
+| ✅ | Les liens vers d'autres sites s'ouvrent dans Safari (avec leur vraie adresse). |
 | ✅ | Chaque règle s'active ou se désactive dans **Réglages**. |
 | ✅ | Bloque les liens TikTok (interdiction codée dans l'app, qu'une mise à jour de règles ne peut pas lever). |
 | ⚠️ | **N'est pas affiliée** à Instagram, Facebook (Meta), YouTube (Google) ni TikTok. |
@@ -44,8 +45,8 @@ JSON publics ([`src/rules/`](src/rules)) que l'app télécharge au lancement :
 
 - une correction fusionnée sur `main` atteint tout le monde en quelques minutes ;
 - le téléchargement n'envoie **aucune donnée** (GitHub voit seulement ton adresse IP) ;
-- le contenu est **vérifié strictement** avant d'être utilisé : pas de code, pas de CSS qui
-  charge une adresse, pas de redirection vers un autre site ;
+- le contenu est **vérifié strictement** avant d'être utilisé : pas de code, pas de HTML, pas de CSS qui
+  charge une adresse, pas de redirection vers un autre site (revérifiée par le moteur après remplacement) ;
 - hors ligne ou fichier invalide : l'app garde ses règles précédentes ou intégrées ;
 - **désactivable** dans Réglages → « Mettre à jour automatiquement ».
 

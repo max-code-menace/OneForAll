@@ -59,23 +59,38 @@ export async function isNotificationsEnabled(): Promise<boolean> {
   return (await AsyncStorage.getItem(ENABLED_KEY).catch(() => null)) === 'true';
 }
 
+/** Résultat de l'activation : 'ok', notifications refusées, ou actualisation en arrière-plan coupée. */
+export type NotificationsResult = 'ok' | 'denied' | 'background-off';
+
 /**
  * Active / désactive les vérifications en arrière-plan.
- * Renvoie false si l'utilisateur a refusé les notifications (dans ce cas rien n'est activé).
+ * Si iOS ne le permet pas (notifications refusées, « Actualisation en arrière-plan »
+ * coupée, mode économie d'énergie…), rien n'est activé et la raison est renvoyée.
  */
-export async function setNotificationsEnabled(enabled: boolean): Promise<boolean> {
+export async function setNotificationsEnabled(enabled: boolean): Promise<NotificationsResult> {
   if (enabled) {
+    const status = await BackgroundFetch.getStatusAsync();
+    if (status !== BackgroundFetch.BackgroundFetchStatus.Available) return 'background-off';
     const { granted } = await Notifications.requestPermissionsAsync({
       ios: { allowAlert: true, allowBadge: true, allowSound: false },
     });
-    if (!granted) return false;
+    if (!granted) return 'denied';
     await BackgroundFetch.registerTaskAsync(TASK, { minimumInterval: 15 * 60 });
   } else {
     if (await TaskManager.isTaskRegisteredAsync(TASK)) await BackgroundFetch.unregisterTaskAsync(TASK);
     await Notifications.setBadgeCountAsync(0).catch(() => {});
   }
   await AsyncStorage.setItem(ENABLED_KEY, String(enabled)).catch(() => {});
-  return true;
+  return 'ok';
+}
+
+/**
+ * Chiffre sur l'icône de l'app : mis à jour aussi quand l'app est ouverte (sinon
+ * l'ancien nombre resterait affiché après avoir lu ses messages). Seulement si les
+ * notifications sont activées.
+ */
+export async function syncAppBadge(count: number): Promise<void> {
+  if (await isNotificationsEnabled()) await Notifications.setBadgeCountAsync(count).catch(() => {});
 }
 
 /** Toucher la notification ouvre directement Instagram dans OneForAll. */

@@ -17,10 +17,12 @@ export const SITE_TEXT: Record<string, { sub: string; toast: string }> = {
   facebook: { sub: 'Reels et vidéos masqués', toast: 'Reels et vidéos masqués' },
 };
 
-/** Nom de domaine affiché sous le nom du site (ex. « m.youtube.com »). */
-export function displayHost(url: string): string {
-  return url.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
-}
+/**
+ * Domaines qui restent DANS l'app en plus de ceux des réseaux : connexion et
+ * vérifications (Google pour YouTube, Messenger et pages techniques de Meta).
+ * Tout autre site s'ouvre dans Safari. Écrit en dur : pas modifiable à distance.
+ */
+export const INSIDE_HOSTS = ['google.com', 'messenger.com', 'fbsbx.com', 'meta.com', 'fb.com', 'fb.me', 'instagr.am'];
 
 /**
  * Onglets de chaque réseau, dans l'ordre du glissement : depuis le bord droit on passe
@@ -41,7 +43,8 @@ export const SITE_TABS: Record<string, SiteTab[]> = {
   youtube: [
     { label: 'Accueil', path: '/' },
     { label: 'Abonnements', path: '/feed/subscriptions' },
-    { label: 'Bibliothèque', path: '/feed/library', match: '/feed/' },
+    // L'ancienne « Bibliothèque » (/feed/library) s'appelle maintenant « Vous ».
+    { label: 'Vous', path: '/feed/you', match: '/feed/' },
   ],
   facebook: [
     { label: 'Fil', path: '/' },
@@ -59,14 +62,23 @@ export function tabIndexForPath(tabs: SiteTab[], path: string): number | null {
   return i >= 0 ? i : null;
 }
 
-/** Script injecté pour aller à un onglet : clic sur le lien du site, sinon navigation. */
+/**
+ * Script injecté pour aller à un onglet : clic sur le lien du site, sinon navigation.
+ * Profil Instagram : parmi les petites photos de profil visibles, celle qui est le
+ * plus bas à l'écran, c'est-à-dire dans la barre du bas (les stories, en haut,
+ * montrent aussi des photos de profil, mais plus grandes et d'autres personnes).
+ */
 export function tabScript(tab: SiteTab): string {
   if (tab.profile) {
     return `(function () {
-      var imgs = document.querySelectorAll('a[href^="/"] img[alt]');
+      var imgs = document.querySelectorAll('a[href^="/"] img[alt]'), best = null, bestTop = -1;
       for (var i = 0; i < imgs.length; i++) {
-        if (/profil|profile/i.test(imgs[i].alt)) { imgs[i].closest('a').click(); return; }
+        if (!/profil|profile/i.test(imgs[i].alt)) continue;
+        var r = imgs[i].getBoundingClientRect();
+        if (r.width === 0 || r.width > 40 || r.bottom > window.innerHeight + 1) continue;
+        if (r.top > bestTop) { bestTop = r.top; best = imgs[i]; }
       }
+      if (best) { best.closest('a').click(); return; }
       if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'tabMissing' }));
     })(); true;`;
   }

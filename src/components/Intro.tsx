@@ -225,6 +225,8 @@ function Onboarding({
           accessibilityRole="button"
           onPress={finish}
           disabled={page === PAGES - 1}
+          // Invisible sur la dernière page : caché aussi pour VoiceOver.
+          accessibilityElementsHidden={page === PAGES - 1}
           style={[styles.skip, { opacity: page === PAGES - 1 ? 0 : 1 }]}
         >
           <Text style={{ fontSize: 17, color: t.ink2 }}>Passer</Text>
@@ -240,8 +242,12 @@ function Onboarding({
         onLayout={(e) => setPageHeight(e.nativeEvent.layout.height)}
         style={{ flex: 1 }}
       >
+        {/* Chaque page défile verticalement si le texte est très grand (Réglages iOS → Taille du texte). */}
         {/* Page 1 */}
-        <View style={[styles.page, { width, height: pageHeight || undefined, gap: 20 }]}>
+        <ScrollView
+          style={{ width, height: pageHeight || undefined }}
+          contentContainerStyle={[styles.page, { flexGrow: 1, gap: 20 }]}
+        >
           <View style={styles.markArea}>
             <View ref={markRef} collapsable={false} style={{ opacity: markShown ? 1 : 0 }}>
               <Mark size={MARK_BOX} />
@@ -252,10 +258,10 @@ function Onboarding({
             OneForAll masque les Reels, les Shorts et Explore. Tu gardes tes messages, les profils, la recherche et la
             publication.
           </Text>
-        </View>
+        </ScrollView>
 
         {/* Page 2 */}
-        <View style={[styles.page, { width }]}>
+        <ScrollView style={{ width, height: pageHeight || undefined }} contentContainerStyle={styles.page}>
           <Text style={[styles.title, { color: t.ink }]}>Ce que l’app ne fait pas</Text>
           <View style={{ gap: 12 }}>
             {[
@@ -269,10 +275,10 @@ function Onboarding({
               </View>
             ))}
           </View>
-        </View>
+        </ScrollView>
 
         {/* Page 3 */}
-        <View style={[styles.page, { width }]}>
+        <ScrollView style={{ width, height: pageHeight || undefined }} contentContainerStyle={styles.page}>
           <Text style={[styles.title, { color: t.ink }]}>Te connecter à tes comptes</Text>
           <View style={{ gap: 20 }}>
             {[
@@ -293,13 +299,21 @@ function Onboarding({
               Ton mot de passe va directement à la plateforme. OneForAll ne le voit jamais.
             </Text>
           </View>
-        </View>
+        </ScrollView>
       </ScrollView>
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 16) + 16 }]}>
         <View style={styles.dots}>
           {dotWidths.map((w, i) => (
-            <Pressable key={i} onPress={() => goTo(i)} hitSlop={8} accessibilityLabel={`Page ${i + 1}`}>
+            <Pressable
+              key={i}
+              onPress={() => goTo(i)}
+              // Points de 8 pt : zone tactile agrandie (44 pt de haut).
+              hitSlop={{ top: 18, bottom: 18, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={`Page ${i + 1} sur ${PAGES}`}
+              accessibilityState={{ selected: i === page }}
+            >
               <Animated.View
                 style={{ height: 8, borderRadius: 4, width: w, backgroundColor: i === page ? t.primary : t.sep2 }}
               />
@@ -333,7 +347,7 @@ const styles = StyleSheet.create({
   skipBar: { height: 44, flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 12 },
   skip: { minHeight: 44, paddingHorizontal: 12, justifyContent: 'center' },
   page: { paddingTop: 24, paddingHorizontal: 28, gap: 24 },
-  markArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  markArea: { flex: 1, minHeight: MARK_BOX, alignItems: 'center', justifyContent: 'center' },
   title: { fontSize: 30, lineHeight: 36, fontWeight: '700', letterSpacing: -0.6 },
   lead: { fontSize: 17, lineHeight: 24, paddingBottom: 8 },
   promise: { padding: 18, borderRadius: 20, gap: 4 },

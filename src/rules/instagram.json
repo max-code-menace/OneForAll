@@ -13,6 +13,7 @@
       "label": "Fil : seulement les gens que tu suis",
       "description": "L’accueil s’ouvre sur le fil « Abonnements » : les publications des comptes que tu suis, des plus récentes aux plus anciennes, sans recommandations.",
       "defaultEnabled": true,
+      "silent": true,
       "urls": [
         {
           "pattern": "^/$",

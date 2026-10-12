@@ -161,7 +161,15 @@ export function SwitchRow({
 }) {
   const t = useTheme();
   return (
-    <Pressable onPress={() => onValueChange(!value)} style={styles.switchRow} accessibilityRole="switch" accessibilityState={{ checked: value }}>
+    <Pressable
+      onPress={() => onValueChange(!value)}
+      style={styles.switchRow}
+      // Une seule étape pour VoiceOver : la ligne entière (l'interrupteur dedans est masqué).
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+      accessibilityHint={description}
+    >
       <View
         style={[
           styles.switchText,
@@ -171,7 +179,7 @@ export function SwitchRow({
         <Text style={[styles.rowLabel, { color: t.ink }]}>{label}</Text>
         {description ? <Text style={[styles.rowDescription, { color: t.ink2 }]}>{description}</Text> : null}
       </View>
-      <View ref={switchRef} collapsable={false}>
+      <View ref={switchRef} collapsable={false} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
         <Switch
           value={value}
           onValueChange={onValueChange}
@@ -199,17 +207,11 @@ export function LinkRow({ label, onPress, external }: { label: string; onPress: 
 }
 
 /** Titre d'une section de réglages. */
-export function SectionTitle({ children, initial, platformId }: { children: string; initial?: string; platformId?: string }) {
+export function SectionTitle({ children, platformId }: { children: string; platformId?: string }) {
   const t = useTheme();
   return (
     <View style={styles.sectionTitle}>
-      {platformId ? (
-        <SiteIcon platformId={platformId} name={children} size={24} radius={7} />
-      ) : initial ? (
-        <View style={[styles.sectionInitial, { backgroundColor: t.surface2 }]}>
-          <Text style={{ fontSize: 12, fontWeight: '700', color: t.ink2 }}>{initial}</Text>
-        </View>
-      ) : null}
+      {platformId ? <SiteIcon platformId={platformId} name={children} size={24} radius={7} /> : null}
       <Text style={{ fontSize: 15, fontWeight: '600', color: t.ink2 }}>{children}</Text>
     </View>
   );
@@ -228,5 +230,4 @@ export const styles = StyleSheet.create({
   rowDescription: { fontSize: 13, lineHeight: 18 },
   linkRow: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 },
   sectionTitle: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingLeft: 4 },
-  sectionInitial: { width: 24, height: 24, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
 });

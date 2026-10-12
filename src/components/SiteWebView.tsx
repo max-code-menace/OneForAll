@@ -1,16 +1,17 @@
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Linking, Pressable, Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
+import { syncAppBadge } from '../lib/backgroundCheck';
 import { findBannedSite } from '../lib/banned';
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
-import { SITE_TABS, tabIndexForPath, tabScript } from '../lib/sites';
+import { INSIDE_HOSTS, SITE_TABS, tabIndexForPath, tabScript } from '../lib/sites';
 import { useTheme } from '../lib/theme';
 import { saveUnread } from '../lib/unread';
-import { findUrlAction, parseUrl } from '../lib/urlRules';
+import { findUrlAction, hostMatches, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
 import { Toast, type ToastHandle } from './Toast';
 
@@ -24,7 +25,7 @@ const SAFARI_APP_NAME = `Version/${String(RNPlatform.Version).split('.').slice(0
 
 type Props = {
   platform: Platform;
-  /** Bandeau affiché 0,5 s après l'ouverture et à chaque rechargement (ex. « Reels masqués »). */
+  /** Bandeau affiché 0,5 s après l'ouverture (ex. « Reels masqués »). */
   welcome?: string;
   /** Pendant le tuto : le bandeau reste affiché tant que c'est vrai. */
   holdWelcome?: boolean;
@@ -46,9 +47,15 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
   const toast = useRef<ToastHandle>(null);
   /** Chemin de la page affichée (mode diagnostic uniquement). */
   const [path, setPath] = useState('');
+  /** Augmente à chaque « Réessayer » : la WebView repart de zéro. */
+  const [attempt, setAttempt] = useState(0);
 
-  // Le script dépend des réglages : s'ils changent, il est reconstruit.
-  const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
+  // Script construit une fois, à l'ouverture du site : si des règles plus récentes
+  // arrivent pendant qu'on est sur la page, elles s'appliqueront à la prochaine
+  // ouverture (sinon la page se rechargerait d'un coup, et un message en cours serait perdu).
+  const [script] = useState(() => buildInjectedScript(platforms, isEnabled));
+  // Domaines des réseaux (les liens entre réseaux restent dans l'app, filtrés).
+  const allHosts = platforms.flatMap((p) => p.hosts);
 
   // À l'ouverture : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
   useEffect(() => {
@@ -94,6 +101,15 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
       return false;
     }
 
+    // Autre site (lien d'une bio, d'une description…) : ouvert dans Safari, avec sa
+    // vraie adresse et un bouton retour. Restent ici les réseaux et leurs pages de
+    // connexion (INSIDE_HOSTS).
+    const u = parseUrl(req.url);
+    if (u && req.isTopFrame !== false && !hostMatches(u.host, allHosts) && !hostMatches(u.host, INSIDE_HOSTS)) {
+      Linking.openURL(req.url).catch(() => {});
+      return false;
+    }
+
     const action = findUrlAction(platforms, req.url, isEnabled);
     if (!action) return true;
 
@@ -103,24 +119,56 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
     if (action.type === 'block') {
       showBanner('Page bloquée');
     } else {
-      showBanner(action.rule.label);
+      if (!action.rule.silent) showBanner(action.rule.label);
       webRef.current?.injectJavaScript(`location.replace(${JSON.stringify(action.url)}); true;`);
     }
     return false;
   }
 
-  /** Messages envoyés par le script injecté (redirection / blocage). */
+  /**
+   * Messages envoyés par le script injecté (redirection / blocage…).
+   * N'importe quelle page peut en envoyer : on ne les écoute que sur les réseaux,
+   * et chaque valeur est vérifiée (type, longueur) avant usage.
+   */
   function onMessage(e: WebViewMessageEvent) {
+    const from = parseUrl(e.nativeEvent.url ?? '');
+    if (!from || !hostMatches(from.host, allHosts)) return;
+    const onThisSite = hostMatches(from.host, platform.hosts);
+    let msg: unknown;
     try {
-      const msg = JSON.parse(e.nativeEvent.data);
-      if (msg.type === 'blocked') showBanner(msg.label ?? 'Page bloquée');
-      if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
-      if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
-      if (msg.type === 'unread' && typeof msg.count === 'number') saveUnread(platform.id, msg.count);
-      if (msg.type === 'tabMissing') showBanner('Onglet introuvable sur cette page');
-      if (msg.type === 'feedLocked') showBanner('Les vidéos suivantes sont bloquées');
+      msg = JSON.parse(e.nativeEvent.data);
     } catch {
-      // message qui ne vient pas de nous : on l'ignore
+      return; // message qui ne vient pas de nous : on l'ignore
+    }
+    if (typeof msg !== 'object' || msg === null) return;
+    const m = msg as Record<string, unknown>;
+    const label = typeof m.label === 'string' && m.label ? m.label.slice(0, 120) : null;
+    switch (m.type) {
+      case 'blocked':
+        showBanner(label ?? 'Page bloquée');
+        break;
+      case 'redirected':
+        if (label) showBanner(label);
+        break;
+      case 'path':
+        if (typeof m.path === 'string') setPath(m.path.slice(0, 300));
+        break;
+      case 'unread':
+        if (onThisSite && Number.isInteger(m.count) && (m.count as number) >= 0 && (m.count as number) < 10000) {
+          const count = m.count as number;
+          saveUnread(platform.id, count);
+          if (platform.id === 'instagram') syncAppBadge(count);
+        }
+        break;
+      case 'edgeSwipe':
+        if (onThisSite && (m.dir === 1 || m.dir === -1)) controlsRef?.current?.goTab(m.dir);
+        break;
+      case 'tabMissing':
+        showBanner('Onglet introuvable sur cette page');
+        break;
+      case 'feedLocked':
+        showBanner('Les vidéos suivantes sont bloquées');
+        break;
     }
   }
 
@@ -132,8 +180,8 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
   return (
     <View style={styles.flex}>
       <WebView
-        // Si les réglages changent, on recrée la WebView avec le nouveau script.
-        key={script}
+        // « Réessayer » (page hors ligne) : on recrée la WebView.
+        key={attempt}
         ref={webRef}
         style={styles.flex}
         source={{ uri: platform.startUrl }}
@@ -160,6 +208,22 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controls
         // Tirer la page vers le bas = recharger.
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
+        // Hors ligne ou site injoignable : un écran en français, avec « Réessayer ».
+        renderError={() => (
+          <View style={[styles.error, { backgroundColor: t.bg }]}>
+            <Text style={[styles.errorTitle, { color: t.ink }]}>Pas de connexion</Text>
+            <Text style={[styles.errorText, { color: t.ink2 }]}>
+              {platform.name} ne répond pas. Vérifie le Wi-Fi ou les données mobiles, puis réessaie.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setAttempt((n) => n + 1)}
+              style={({ pressed }) => [styles.retry, { backgroundColor: t.primary, opacity: pressed ? 0.8 : 1 }]}
+            >
+              <Text style={{ fontSize: 17, fontWeight: '600', color: t.onPrimary }}>Réessayer</Text>
+            </Pressable>
+          </View>
+        )}
       />
       {diagnostic && (
         <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
@@ -186,4 +250,8 @@ const styles = StyleSheet.create({
     maxWidth: '92%',
   },
   diagnosticText: { fontSize: 12, fontFamily: 'Menlo' },
+  error: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
+  errorTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },
+  errorText: { fontSize: 17, lineHeight: 24, textAlign: 'center' },
+  retry: { minHeight: 50, paddingHorizontal: 28, borderRadius: 25, justifyContent: 'center', marginTop: 8 },
 });

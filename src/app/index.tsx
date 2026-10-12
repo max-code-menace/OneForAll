@@ -10,7 +10,8 @@ import { useIntro } from '../lib/intro';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
-import { fetchInstagramUnread, readUnread, saveUnread } from '../lib/unread';
+import { syncAppBadge } from '../lib/backgroundCheck';
+import { fetchInstagramUnread, isBadgeEnabled, readUnread, saveUnread } from '../lib/unread';
 import { formatDuration, readUsage } from '../lib/usage';
 
 const TOUR: TourStep[] = [
@@ -44,15 +45,24 @@ export default function HomeScreen() {
   const tour = useTour('home', TOUR, loaded && splashDone && !onboardingVisible);
   /** Temps passé aujourd'hui sur chaque réseau (compté sur le téléphone, rien n'est envoyé). */
   const [usage, setUsage] = useState<Record<string, number>>({});
-  /** Messages non lus par réseau (pastille). */
+  /** Messages non lus par réseau (pastille, seulement si activée dans les Réglages). */
   const [unread, setUnread] = useState<Record<string, number>>({});
   useFocusEffect(
     useCallback(() => {
       readUsage().then(setUsage);
-      readUnread().then(setUnread);
-      // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
-      fetchInstagramUnread().then((n) => {
-        if (n !== null) saveUnread('instagram', n).then(setUnread);
+      isBadgeEnabled().then((on) => {
+        if (!on) {
+          // Pastille désactivée : rien n'est affiché et Instagram n'est pas contacté.
+          setUnread({});
+          return;
+        }
+        readUnread().then(setUnread);
+        // Instagram : on redemande directement, depuis le téléphone, avec ta connexion.
+        fetchInstagramUnread().then((n) => {
+          if (n === null) return;
+          saveUnread('instagram', n).then(setUnread);
+          syncAppBadge(n);
+        });
       });
     }, []),
   );
@@ -83,7 +93,15 @@ export default function HomeScreen() {
         {platforms.map((p) => (
           <View key={p.id} ref={tour.target(`card-${p.id}`)} collapsable={false}>
             <PressScale
-              accessibilityLabel={`Ouvrir ${p.name}`}
+              // VoiceOver lit tout ce que montre la carte (sinon seulement « Ouvrir … »).
+              accessibilityLabel={[
+                `Ouvrir ${p.name}`,
+                SITE_TEXT[p.id]?.sub,
+                (unread[p.id] ?? 0) > 0 ? `${unread[p.id]} non lus` : null,
+                (usage[p.id] ?? 0) >= 60 ? `aujourd’hui : ${formatDuration(usage[p.id])}` : null,
+              ]
+                .filter(Boolean)
+                .join(', ')}
               onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
               style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
               pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
@@ -99,10 +117,7 @@ export default function HomeScreen() {
                 )}
               </View>
               {(unread[p.id] ?? 0) > 0 && (
-                <View
-                  style={[styles.unread, { backgroundColor: t.accent }]}
-                  accessibilityLabel={`${unread[p.id]} non lus`}
-                >
+                <View style={[styles.unread, { backgroundColor: t.accent }]}>
                   <Text style={{ fontSize: 13, fontWeight: '700', color: t.dark ? t.bg : '#FFFFFF' }}>
                     {unread[p.id] > 99 ? '99+' : unread[p.id]}
                   </Text>

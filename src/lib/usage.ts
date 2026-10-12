@@ -38,6 +38,8 @@ export function useUsageTimer(platformId: string) {
     let since: number | null = AppState.currentState === 'active' ? Date.now() : null;
     const flush = () => {
       if (since === null) return;
+      // Passage de minuit : seul le temps depuis minuit compte pour le nouveau jour.
+      since = Math.max(since, new Date().setHours(0, 0, 0, 0));
       const seconds = Math.round((Date.now() - since) / 1000);
       since = Date.now();
       addUsage(platformId, seconds);

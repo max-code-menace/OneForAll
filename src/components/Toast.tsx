@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react';
-import { Animated, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Animated, StyleSheet, Text, View } from 'react-native';
 
 import { EASE, useReduceMotion, useTheme } from '../lib/theme';
 
@@ -34,6 +34,8 @@ export const Toast = forwardRef<ToastHandle, { pillRef?: RefObject<View | null> 
       timers.current = [
         setTimeout(() => {
           setText(next);
+          // VoiceOver lit le bandeau (accessibilityLiveRegion ne marche que sur Android).
+          AccessibilityInfo.announceForAccessibility(next);
           Animated.timing(anim, { toValue: 1, duration: 260, easing: EASE, useNativeDriver: true }).start();
         }, delay),
         ...(Number.isFinite(duration)

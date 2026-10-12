@@ -61,6 +61,8 @@ export type Rule = {
   rewriteLinks?: RewriteLinkRule[];
   /** Redirections / blocages d'URL. */
   urls?: UrlRule[];
+  /** Redirection sans bandeau (ex. fil « Abonnements » : à chaque retour à l'accueil). */
+  silent?: boolean;
   /**
    * Empêche de glisser verticalement d'une vidéo plein écran à la suivante
    * (Reel ouvert depuis un message : on le voit, mais pas les suivants).
