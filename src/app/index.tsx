@@ -4,18 +4,44 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Mark } from '../components/Mark';
+import { useTour, type TourStep } from '../components/Tour';
 import { PressScale, SiteIcon, Wordmark } from '../components/ui';
+import { useIntro } from '../lib/intro';
 import { useRules } from '../lib/rules';
 import { SITE_TEXT } from '../lib/sites';
 import { cardShadow, useTheme } from '../lib/theme';
 import { fetchInstagramUnread, readUnread, saveUnread } from '../lib/unread';
 import { formatDuration, readUsage } from '../lib/usage';
 
+const TOUR: TourStep[] = [
+  {
+    target: 'card-instagram',
+    title: 'Ouvre un réseau',
+    text: 'Touche une carte : le site s’ouvre sans Reels, Shorts ni Explore. Tes messages et ton profil restent là.',
+    fx: 0.9,
+    fy: 0.5,
+    r: 26,
+  },
+  {
+    target: 'usage-instagram',
+    title: 'Ton temps du jour',
+    text: 'Le temps passé aujourd’hui sur chaque réseau. Il est compté sur ton téléphone, rien n’est envoyé.',
+    fx: 1,
+    fy: 0.5,
+    dx: 16,
+    r: 8,
+  },
+  { target: 'settings', title: 'Les réglages', text: 'Choisis ce qui est masqué, réseau par réseau.', fx: 0.5, fy: 0.5, r: 26 },
+];
+
 /** Écran d'accueil : une carte par réseau social. */
 export default function HomeScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { platforms } = useRules();
+  const { loaded, onboardingVisible, splashDone } = useIntro();
+  // Petit tuto la 1re fois, une fois le lancement et la présentation terminés.
+  const tour = useTour('home', TOUR, loaded && splashDone && !onboardingVisible);
   /** Temps passé aujourd'hui sur chaque réseau (compté sur le téléphone, rien n'est envoyé). */
   const [usage, setUsage] = useState<Record<string, number>>({});
   /** Messages non lus par réseau (pastille). */
@@ -42,6 +68,7 @@ export default function HomeScreen() {
           <Wordmark size={19} />
         </View>
         <Pressable
+          ref={tour.target('settings')}
           accessibilityRole="button"
           onPress={() => router.push('/settings')}
           style={({ pressed }) => [styles.settings, { backgroundColor: t.surface2, opacity: pressed ? 0.7 : 1 }]}
@@ -54,33 +81,36 @@ export default function HomeScreen() {
 
       <View style={{ gap: 12 }}>
         {platforms.map((p) => (
-          <PressScale
-            key={p.id}
-            accessibilityLabel={`Ouvrir ${p.name}`}
-            onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
-            style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
-            pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
-          >
-            <SiteIcon platformId={p.id} name={p.name} size={52} radius={16} />
-            <View style={styles.cardText}>
-              <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
-              <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
-              {(usage[p.id] ?? 0) >= 60 && (
-                <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
-              )}
-            </View>
-            {(unread[p.id] ?? 0) > 0 && (
-              <View
-                style={[styles.unread, { backgroundColor: t.accent }]}
-                accessibilityLabel={`${unread[p.id]} non lus`}
-              >
-                <Text style={{ fontSize: 13, fontWeight: '700', color: t.dark ? t.bg : '#FFFFFF' }}>
-                  {unread[p.id] > 99 ? '99+' : unread[p.id]}
-                </Text>
+          <View key={p.id} ref={tour.target(`card-${p.id}`)} collapsable={false}>
+            <PressScale
+              accessibilityLabel={`Ouvrir ${p.name}`}
+              onPress={() => router.push({ pathname: '/browser/[platform]', params: { platform: p.id } })}
+              style={[styles.card, { backgroundColor: t.surface }, cardShadow(t)]}
+              pressedStyle={{ backgroundColor: t.surface2, shadowOpacity: 0 }}
+            >
+              <SiteIcon platformId={p.id} name={p.name} size={52} radius={16} />
+              <View style={styles.cardText}>
+                <Text style={[styles.cardName, { color: t.ink }]}>{p.name}</Text>
+                <Text style={{ fontSize: 15, color: t.ink2 }}>{SITE_TEXT[p.id]?.sub ?? ''}</Text>
+                {(usage[p.id] ?? 0) >= 60 && (
+                  <View style={{ alignSelf: 'flex-start' }} ref={tour.target(`usage-${p.id}`)} collapsable={false}>
+                    <Text style={{ fontSize: 13, color: t.ink3 }}>Aujourd’hui : {formatDuration(usage[p.id])}</Text>
+                  </View>
+                )}
               </View>
-            )}
-            <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
-          </PressScale>
+              {(unread[p.id] ?? 0) > 0 && (
+                <View
+                  style={[styles.unread, { backgroundColor: t.accent }]}
+                  accessibilityLabel={`${unread[p.id]} non lus`}
+                >
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: t.dark ? t.bg : '#FFFFFF' }}>
+                    {unread[p.id] > 99 ? '99+' : unread[p.id]}
+                  </Text>
+                </View>
+              )}
+              <Text style={{ fontSize: 24, color: t.ink3 }}>›</Text>
+            </PressScale>
+          </View>
         ))}
       </View>
 
@@ -89,6 +119,7 @@ export default function HomeScreen() {
         Reels, Shorts, vidéos courtes et Explore sont masqués. DMs, profils, recherche et publication restent
         disponibles.
       </Text>
+      {tour.element}
     </ScrollView>
   );
 }

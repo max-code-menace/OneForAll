@@ -23,15 +23,14 @@ import { PrimaryButton } from './ui';
  * la première page de la présentation : aucune coupure entre les deux.
  */
 export function Intro() {
-  const { loaded, onboardingVisible } = useIntro();
-  const [splashDone, setSplashDone] = useState(false);
+  const { loaded, onboardingVisible, splashDone, setSplashDone } = useIntro();
   const onbMarkRef = useRef<View>(null);
 
   return (
     <>
       {loaded && <Onboarding visible={onboardingVisible} markRef={onbMarkRef} markShown={splashDone} />}
       {!splashDone && (
-        <Splash ready={loaded} toOnboarding={onboardingVisible} targetRef={onbMarkRef} onDone={() => setSplashDone(true)} />
+        <Splash ready={loaded} toOnboarding={onboardingVisible} targetRef={onbMarkRef} onDone={setSplashDone} />
       )}
     </>
   );

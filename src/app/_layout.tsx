@@ -37,8 +37,11 @@ function Navigation() {
         <Stack.Screen name="index" />
         <Stack.Screen name="settings" />
         <Stack.Screen name="about" />
-        {/* Glisser depuis le bord gauche ramène à l'accueil (aussi depuis un site). */}
-        <Stack.Screen name="browser/[platform]" />
+        <Stack.Screen
+          name="browser/[platform]"
+          // Dans un site, les bords servent à changer d'onglet ; le bouton rond ramène à l'accueil.
+          options={{ gestureEnabled: false }}
+        />
       </Stack>
       <Intro />
     </View>

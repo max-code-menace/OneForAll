@@ -12,6 +12,9 @@ type IntroContextValue = {
   /** false tant qu'on ne sait pas encore si la présentation a déjà été vue. */
   loaded: boolean;
   onboardingVisible: boolean;
+  /** L'animation de lancement est terminée (l'écran n'est plus recouvert). */
+  splashDone: boolean;
+  setSplashDone: () => void;
   showOnboarding: () => void;
   finishOnboarding: () => void;
 };
@@ -21,6 +24,8 @@ const IntroContext = createContext<IntroContextValue | null>(null);
 export function IntroProvider({ children }: { children: ReactNode }) {
   const [loaded, setLoaded] = useState(false);
   const [onboardingVisible, setVisible] = useState(false);
+  const [splashDone, setSplashDoneState] = useState(false);
+  const setSplashDone = useCallback(() => setSplashDoneState(true), []);
 
   useEffect(() => {
     AsyncStorage.getItem(SEEN_KEY)
@@ -36,8 +41,8 @@ export function IntroProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ loaded, onboardingVisible, showOnboarding, finishOnboarding }),
-    [loaded, onboardingVisible, showOnboarding, finishOnboarding],
+    () => ({ loaded, onboardingVisible, splashDone, setSplashDone, showOnboarding, finishOnboarding }),
+    [loaded, onboardingVisible, splashDone, setSplashDone, showOnboarding, finishOnboarding],
   );
   return <IntroContext.Provider value={value}>{children}</IntroContext.Provider>;
 }

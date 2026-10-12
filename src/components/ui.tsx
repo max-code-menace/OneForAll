@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type RefObject } from 'react';
 import {
   Animated,
   Image,
@@ -149,12 +149,15 @@ export function SwitchRow({
   value,
   onValueChange,
   border,
+  switchRef,
 }: {
   label: string;
   description?: string;
   value: boolean;
   onValueChange: (v: boolean) => void;
   border?: boolean;
+  /** Pour que le tuto puisse montrer l'interrupteur. */
+  switchRef?: RefObject<View | null>;
 }) {
   const t = useTheme();
   return (
@@ -168,12 +171,14 @@ export function SwitchRow({
         <Text style={[styles.rowLabel, { color: t.ink }]}>{label}</Text>
         {description ? <Text style={[styles.rowDescription, { color: t.ink2 }]}>{description}</Text> : null}
       </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ true: t.primary, false: t.switchOff }}
-        ios_backgroundColor={t.switchOff}
-      />
+      <View ref={switchRef} collapsable={false}>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          trackColor={{ true: t.primary, false: t.switchOff }}
+          ios_backgroundColor={t.switchOff}
+        />
+      </View>
     </Pressable>
   );
 }

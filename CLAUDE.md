@@ -79,8 +79,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   était figé sur iOS 18, incohérent avec le vrai moteur. Corrigé (à builder) : `applicationNameForUserAgent` avec la
   vraie version d'iOS (SiteWebView.tsx). Si ça ne suffit pas : regarder les fenêtres pop-up
   (`javaScriptCanOpenWindowsAutomatically`, `onOpenWindow`).
-- Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre ; glisser
-  depuis le bord gauche = retour à OneForAll ; tirer vers le bas = recharger ; astuce affichée à la 1re ouverture.
+- Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre.
+  2e design (artifact Claude Design de l'utilisateur, « Prototype animé ») : dans un site, glisser depuis le bord
+  **droit** = onglet suivant du réseau, bord **gauche** = onglet précédent (`SITE_TABS` dans `src/lib/sites.ts`,
+  bords de 22 pt, seuil 50 pt, `injectJavaScript` qui clique le lien du site) ; seul le bouton rond ramène à
+  OneForAll (geste de retour iOS coupé sur cet écran) ; tirer vers le bas = recharger. **Petit tuto** la 1re fois
+  sur l'accueil, un site et les Réglages (`src/components/Tour.tsx`, `oneforall:tour-seen:v1`), il remplace l'astuce
+  « glisser ». Onglet Profil d'Instagram trouvé par la photo de profil (alt « profil »/« profile ») : non vérifié.
 - **Design** appliqué, vérifié seulement en version web (captures Chromium), pas sur iPhone.
 - Concurrent vu en vidéo : **SocialLite** (49,90 €/an). Idées reprises gratuitement, à la demande de l'utilisateur
   (pas encore buildé) : fil Instagram « Abonnements » (`ig.followingFeed`, redirection `/` → `/?variant=following`,

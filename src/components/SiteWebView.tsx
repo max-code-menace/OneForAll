@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
@@ -7,6 +7,7 @@ import { findBannedSite } from '../lib/banned';
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
+import { SITE_TABS, tabIndexForPath, tabScript } from '../lib/sites';
 import { useTheme } from '../lib/theme';
 import { saveUnread } from '../lib/unread';
 import { findUrlAction, parseUrl } from '../lib/urlRules';
@@ -25,13 +26,19 @@ type Props = {
   platform: Platform;
   /** Bandeau affiché 0,5 s après l'ouverture et à chaque rechargement (ex. « Reels masqués »). */
   welcome?: string;
+  /** Pendant le tuto : le bandeau reste affiché tant que c'est vrai. */
+  holdWelcome?: boolean;
+  /** Le bandeau, pour que le tuto puisse le montrer. */
+  toastRef?: RefObject<View | null>;
+  /** Commande donnée au parent : passer à l'onglet suivant (+1) ou précédent (-1) du site. */
+  controlsRef?: RefObject<{ goTab: (dir: 1 | -1) => void } | null>;
 };
 
 /**
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, welcome }: Props) {
+export function SiteWebView({ platform, welcome, holdWelcome, toastRef, controlsRef }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -43,10 +50,36 @@ export function SiteWebView({ platform, welcome }: Props) {
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
   const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
 
-  // À l'ouverture : rappel discret de ce qui est masqué.
+  // À l'ouverture : rappel discret de ce qui est masqué (gardé affiché pendant le tuto).
   useEffect(() => {
-    if (welcome) toast.current?.show(welcome, 500);
+    if (welcome) toast.current?.show(welcome, 500, holdWelcome ? Infinity : 2500);
+    // Seulement à l'ouverture ; la fin du tuto est gérée juste en dessous.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [welcome]);
+  const wasHolding = useRef(holdWelcome);
+  useEffect(() => {
+    if (holdWelcome && welcome) toast.current?.show(welcome, 0, Infinity);
+    else if (wasHolding.current) toast.current?.hide();
+    wasHolding.current = holdWelcome;
+    // Ne réagit qu'au début et à la fin du tuto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdWelcome]);
+
+  // Onglets du site : on retient le dernier choisi (le profil n'a pas d'adresse fixe).
+  const lastTab = useRef(0);
+  if (controlsRef) {
+    controlsRef.current = {
+      goTab(dir) {
+        const tabs = SITE_TABS[platform.id] ?? [];
+        const current = tabIndexForPath(tabs, path) ?? lastTab.current;
+        const next = current + dir;
+        if (next < 0 || next >= tabs.length) return;
+        lastTab.current = next;
+        webRef.current?.injectJavaScript(tabScript(tabs[next]));
+        showBanner(tabs[next].label);
+      },
+    };
+  }
 
   function showBanner(text: string) {
     toast.current?.show(text);
@@ -84,6 +117,7 @@ export function SiteWebView({ platform, welcome }: Props) {
       if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
       if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
       if (msg.type === 'unread' && typeof msg.count === 'number') saveUnread(platform.id, msg.count);
+      if (msg.type === 'tabMissing') showBanner('Onglet introuvable sur cette page');
       if (msg.type === 'feedLocked') showBanner('Les vidéos suivantes sont bloquées');
     } catch {
       // message qui ne vient pas de nous : on l'ignore
@@ -120,8 +154,7 @@ export function SiteWebView({ platform, welcome }: Props) {
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
         // --- Confort -------------------------------------------------------
-        // Le glissement depuis le bord gauche ramène à OneForAll (geste de la pile d'écrans),
-        // pas en arrière dans le site : les sites ont leurs propres flèches de retour.
+        // Les bords de l'écran changent d'onglet (voir browser/[platform].tsx), pas de page.
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
         // Tirer la page vers le bas = recharger.
@@ -135,7 +168,7 @@ export function SiteWebView({ platform, welcome }: Props) {
           </Text>
         </View>
       )}
-      <Toast ref={toast} />
+      <Toast ref={toast} pillRef={toastRef} />
     </View>
   );
 }

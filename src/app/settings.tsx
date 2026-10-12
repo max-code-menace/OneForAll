@@ -3,12 +3,24 @@ import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTour, type TourStep } from '../components/Tour';
 import { BackButton, Card, LinkRow, SectionTitle, Separator, SwitchRow } from '../components/ui';
 import { isNotificationsEnabled, setNotificationsEnabled } from '../lib/backgroundCheck';
 import { useIntro } from '../lib/intro';
 import { useRules, type RulesStatus } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { EASE, useReduceMotion, useTheme, type Theme } from '../lib/theme';
+
+const TOUR: TourStep[] = [
+  {
+    target: 'switch-first',
+    title: 'Un interrupteur par règle',
+    text: 'Vert : la règle est active. Touche-le pour la couper, par exemple pour voir les Reels de tes amis.',
+    fx: 0.5,
+    fy: 0.5,
+    r: 20,
+  },
+];
 
 /** Réglages : un interrupteur par règle, groupés par plateforme. */
 export default function SettingsScreen() {
@@ -18,6 +30,8 @@ export default function SettingsScreen() {
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
   const { showOnboarding } = useIntro();
   const [notifications, setNotifications] = useState(false);
+  // Petit tuto la 1re fois (après l'arrivée de l'écran).
+  const tour = useTour('settings', TOUR, true, 600);
   useEffect(() => {
     isNotificationsEnabled().then(setNotifications);
   }, []);
@@ -63,6 +77,7 @@ export default function SettingsScreen() {
                   value={isEnabled(rule.id)}
                   onValueChange={(v) => setEnabled(rule.id, v)}
                   border={i > 0}
+                  switchRef={p === platforms[0] && i === 0 ? tour.target('switch-first') : undefined}
                 />
               ))}
             </Card>
@@ -146,6 +161,7 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+      {tour.element}
     </View>
   );
 }
