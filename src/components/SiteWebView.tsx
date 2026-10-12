@@ -14,10 +14,6 @@ import { Toast, type ToastHandle } from './Toast';
 
 type Props = {
   platform: Platform;
-  /** Prévient l'écran parent quand on peut revenir en arrière dans le site. */
-  onCanGoBackChange?: (canGoBack: boolean) => void;
-  /** Donne au parent les commandes "retour" et "recharger". */
-  controlsRef?: React.RefObject<{ goBack: () => void; reload: () => void } | null>;
   /** Bandeau affiché 0,5 s après l'ouverture et à chaque rechargement (ex. « Reels masqués »). */
   welcome?: string;
 };
@@ -26,7 +22,7 @@ type Props = {
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome }: Props) {
+export function SiteWebView({ platform, welcome }: Props) {
   const t = useTheme();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
@@ -37,16 +33,6 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
 
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
   const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
-
-  if (controlsRef) {
-    controlsRef.current = {
-      goBack: () => webRef.current?.goBack(),
-      reload: () => {
-        webRef.current?.reload();
-        if (welcome) toast.current?.show(welcome, 500);
-      },
-    };
-  }
 
   // À l'ouverture : rappel discret de ce qui est masqué.
   useEffect(() => {
@@ -94,7 +80,6 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
   }
 
   function onNavigationStateChange(nav: WebViewNavigation) {
-    onCanGoBackChange?.(nav.canGoBack);
     const u = parseUrl(nav.url);
     if (u) setPath(u.path);
   }
@@ -123,8 +108,11 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome 
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
         // --- Confort -------------------------------------------------------
-        allowsBackForwardNavigationGestures
+        // Le glissement depuis le bord gauche ramène à OneForAll (geste de la pile d'écrans),
+        // pas en arrière dans le site : les sites ont leurs propres flèches de retour.
+        allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
+        // Tirer la page vers le bas = recharger.
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
       />

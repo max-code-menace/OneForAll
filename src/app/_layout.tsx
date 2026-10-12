@@ -35,11 +35,8 @@ function Navigation() {
         <Stack.Screen name="settings" />
         <Stack.Screen name="about" />
         <Stack.Screen name="blocked" />
-        <Stack.Screen
-          name="browser/[platform]"
-          // Le glissement depuis le bord sert à revenir en arrière DANS le site.
-          options={{ gestureEnabled: false }}
-        />
+        {/* Glisser depuis le bord gauche ramène à l'accueil (aussi depuis un site). */}
+        <Stack.Screen name="browser/[platform]" />
       </Stack>
       <Intro />
     </View>
