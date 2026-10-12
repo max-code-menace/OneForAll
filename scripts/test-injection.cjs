@@ -478,6 +478,9 @@ async function browserTests() {
   async function openSpa(withRouter) {
     const p = await browser.newPage();
     let loads = 0;
+    // Messages à l'app, gardés même si la page se recharge.
+    const sent = [];
+    await p.exposeFunction('__report', (m) => sent.push(JSON.parse(m)));
     await p.route('**/*', (route) => {
       loads++;
       route.fulfill({ contentType: 'text/html', body: `<html><head></head><body>
@@ -488,12 +491,17 @@ async function browserTests() {
     });
     await p.addInitScript(() => {
       window.__msgs = [];
-      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+      window.ReactNativeWebView = {
+        postMessage: (m) => {
+          window.__msgs.push(JSON.parse(m));
+          window.__report(m);
+        },
+      };
     });
     await p.addInitScript(buildInjectedScript(PLATFORMS, defaults));
     await p.goto('https://www.instagram.com/p/AAA/');
     await p.waitForTimeout(250);
-    return { p, loads: () => loads };
+    return { p, loads: () => loads, sent };
   }
   let spa = await openSpa(true);
   await spa.p.click('#exploreLink');
@@ -504,6 +512,7 @@ async function browserTests() {
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
   assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
+  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
   await spa.p.close();
   // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
   spa = await openSpa(false);
@@ -511,6 +520,8 @@ async function browserTests() {
   await spa.p.waitForTimeout(1500);
   assert.equal(pathOf(spa.p), '/explore/search/', 'sans routeur : bonne adresse');
   assert.equal(spa.loads(), 2, 'sans routeur : page rechargée une fois');
+  // Le compteur du mode diagnostic connaît la cause de ce rechargement.
+  assert.deepEqual(spa.sent.filter((m) => m.type === 'reloading'), [{ type: 'reloading', why: 'stuck' }], 'rechargement signalé');
   await spa.p.close();
 
   // Défilement fluide : aucun écouteur qui bloque le défilement sur la page elle-même.

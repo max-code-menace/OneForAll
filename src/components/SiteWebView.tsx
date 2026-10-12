@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
 import { Linking, Pressable, Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
+import type { WebViewNavigationEvent } from 'react-native-webview/lib/WebViewTypes';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
 import { syncAppBadge } from '../lib/backgroundCheck';
@@ -43,8 +44,29 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
   const { isEnabled, diagnostic } = useSettings();
   const { platforms } = useRules();
   const toast = useRef<ToastHandle>(null);
-  /** Chemin de la page affichée (mode diagnostic uniquement). */
-  const [path, setPath] = useState('');
+  /** Chemin de la page affichée (gardé dans une ref, affiché en mode diagnostic uniquement). */
+  const pathRef = useRef('');
+  const [path, setPathShown] = useState('');
+  function setPath(p: string) {
+    pathRef.current = p;
+    // Hors diagnostic, rien à afficher : pas de nouveau dessin de l'écran à chaque page.
+    if (diagnostic) setPathShown(p);
+  }
+  /**
+   * Chargements COMPLETS de la page (mode diagnostic) : le 1er est l'ouverture, les
+   * suivants sont des rechargements à traquer. Compté dans une ref (pas de nouveau
+   * dessin de l'écran), affiché seulement en mode diagnostic.
+   */
+  const loads = useRef({ count: 0, last: '' });
+  const [loadsShown, setLoadsShown] = useState(loads.current);
+  /** Cause connue du prochain chargement (une redirection décidée par l'app…). */
+  const nextCause = useRef<string | null>(null);
+  // Mode diagnostic activé pendant que le site reste ouvert : on affiche l'état actuel.
+  useEffect(() => {
+    if (!diagnostic) return;
+    setPathShown(pathRef.current);
+    setLoadsShown(loads.current);
+  }, [diagnostic]);
   /** Augmente à chaque « Réessayer » : la WebView repart de zéro. */
   const [attempt, setAttempt] = useState(0);
 
@@ -102,6 +124,7 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
       showBanner('Page bloquée');
     } else {
       if (!action.rule.silent) showBanner(action.rule.label);
+      nextCause.current = 'redirection OneForAll';
       webRef.current?.injectJavaScript(`location.replace(${JSON.stringify(action.url)}); true;`);
     }
     return false;
@@ -135,6 +158,11 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
       case 'path':
         if (typeof m.path === 'string') setPath(m.path.slice(0, 300));
         break;
+      case 'reloading':
+        // Le script recharge la page lui-même : redirection pendant le chargement, ou
+        // redirection douce à laquelle le site n'a pas réagi.
+        if (onThisSite) nextCause.current = m.why === 'early' ? 'redirection au chargement' : 'redirection douce ratée';
+        break;
       case 'unread':
         if (onThisSite && Number.isInteger(m.count) && (m.count as number) >= 0 && (m.count as number) < 10000) {
           const count = m.count as number;
@@ -151,6 +179,23 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
   function onNavigationStateChange(nav: WebViewNavigation) {
     const u = parseUrl(nav.url);
     if (u) setPath(u.path);
+  }
+
+  /** Début d'un chargement complet de la page (pas les changements de page internes du site). */
+  function onLoadStart(e: WebViewNavigationEvent) {
+    const n = loads.current.count + 1;
+    const cause =
+      n === 1
+        ? 'ouverture'
+        : nextCause.current ??
+          ({ reload: 'rechargement', click: 'lien', backforward: 'retour', formsubmit: 'formulaire' } as Record<string, string>)[
+            e.nativeEvent.navigationType
+          ] ??
+          'navigation';
+    nextCause.current = null;
+    const u = parseUrl(e.nativeEvent.url);
+    loads.current = { count: n, last: u ? `${cause} (${u.path.slice(0, 60)})` : cause };
+    if (diagnostic) setLoadsShown(loads.current);
   }
 
   return (
@@ -177,6 +222,7 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         // --- Blocage des URLs ----------------------------------------------
         onShouldStartLoadWithRequest={onShouldStartLoadWithRequest}
         onNavigationStateChange={onNavigationStateChange}
+        onLoadStart={onLoadStart}
         // --- Confort -------------------------------------------------------
         // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
@@ -205,6 +251,9 @@ export function SiteWebView({ platform, welcome, holdWelcome, toastRef }: Props)
         <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
           <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
             Page : {path || '…'}
+          </Text>
+          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+            Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
           </Text>
         </View>
       )}

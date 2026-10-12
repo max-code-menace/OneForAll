@@ -183,6 +183,7 @@ const RUNTIME = `
   function softGo(target, replace) {
     if (document.readyState === 'loading' || !document.body || typeof PopStateEvent !== 'function') {
       leaving = true;
+      post({ type: 'reloading', why: 'early' }); // compteur du mode diagnostic
       if (replace) location.replace(target); else location.assign(target);
       return;
     }
@@ -199,6 +200,7 @@ const RUNTIME = `
     } catch (e) {
       watch.disconnect();
       leaving = true;
+      post({ type: 'reloading', why: 'stuck' });
       location.assign(target);
       return;
     }
@@ -206,7 +208,11 @@ const RUNTIME = `
     setTimeout(function () {
       watch.disconnect();
       // Rechargement seulement si on est toujours sur cette adresse (l'utilisateur a pu repartir).
-      if (!reacted && location.href === expected) { leaving = true; location.reload(); }
+      if (!reacted && location.href === expected) {
+        leaving = true;
+        post({ type: 'reloading', why: 'stuck' });
+        location.reload();
+      }
     }, 800);
   }
 
