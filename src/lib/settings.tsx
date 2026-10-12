@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-import { ALL_RULES } from '../rules';
+import { useRules } from './rules';
 
 /**
  * Réglages = un booléen par règle (activée / désactivée), sauvegardés sur le
@@ -23,6 +23,7 @@ type SettingsContextValue = {
 const SettingsContext = createContext<SettingsContextValue | null>(null);
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
+  const { allRules } = useRules();
   const [overrides, setOverrides] = useState<Overrides>({});
   const [loaded, setLoaded] = useState(false);
 
@@ -44,9 +45,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const isEnabled = useCallback(
     (ruleId: string) => {
       if (ruleId in overrides) return overrides[ruleId];
-      return ALL_RULES.find((r) => r.id === ruleId)?.defaultEnabled ?? false;
+      return allRules.find((r) => r.id === ruleId)?.defaultEnabled ?? false;
     },
-    [overrides],
+    [overrides, allRules],
   );
 
   const setEnabled = useCallback(

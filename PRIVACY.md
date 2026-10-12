@@ -1,13 +1,27 @@
 # Politique de confidentialité
 
-**En bref : OneForAll ne collecte, n'envoie et ne vend aucune donnée.**
+**En bref : OneForAll ne collecte, n'envoie et ne vend aucune donnée te concernant.**
 
 ## Ce que fait l'app
-- Elle n'a **ni compte, ni serveur, ni statistiques, ni publicité, ni outil de suivi**.
+- Elle n'a **ni compte, ni serveur à elle, ni statistiques, ni publicité, ni outil de suivi**.
 - Tes réglages (quelles règles sont actives) sont enregistrés **uniquement sur ton téléphone**.
 - Elle ne lit ni tes messages, ni tes mots de passe, ni ton contenu. Le script qu'elle ajoute aux
   pages ne fait que masquer des éléments et rediriger des liens. Il est lisible dans `src/lib/buildInjection.ts`
   et `src/rules/`.
+
+## La seule connexion que fait l'app elle-même : les règles
+Quand tu ouvres l'app, elle télécharge 3 petits fichiers publics (`src/rules/*.json` de ce dépôt,
+sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des règles.
+
+- **Aucune donnée n'est envoyée** : c'est une simple requête de téléchargement, sans identifiant,
+  sans compte, sans contenu de ton téléphone.
+- Comme pour n'importe quelle page web, **GitHub voit ton adresse IP** à ce moment-là et applique
+  sa propre politique de confidentialité.
+- Ces fichiers sont **vérifiés strictement** avant usage (`src/rules/validate.ts`) : ils ne peuvent
+  contenir ni code, ni CSS qui charge une adresse, ni redirection vers un autre site. S'ils sont
+  invalides ou inaccessibles, l'app garde ses règles précédentes ou intégrées.
+- **Tu peux couper ça** : Réglages → « Mettre à jour automatiquement ». L'app n'utilise alors que
+  ses règles intégrées et ne contacte personne.
 
 ## Ce que font les sites que tu ouvres
 Instagram, YouTube et les autres sites s'affichent dans l'app comme dans un navigateur.

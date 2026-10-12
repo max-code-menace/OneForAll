@@ -2,9 +2,11 @@
  * Types communs à toutes les plateformes.
  *
  * Toutes les règles sont DÉCLARATIVES (des chaînes et des objets simples) :
- * elles sont converties en JSON puis injectées dans la page web.
+ * elles vivent dans src/rules/<plateforme>.json et sont injectées dans la page web.
  * Pour modifier un sélecteur quand Instagram/YouTube change son HTML,
- * il suffit d'éditer src/rules/<plateforme>.ts — pas besoin de toucher au moteur.
+ * il suffit d'éditer ce fichier JSON — pas besoin de toucher au moteur.
+ * (Dans le JSON, `css` peut être une liste de lignes ; elle est jointe au chargement.)
+ * Le format est vérifié par src/rules/validate.ts.
  */
 
 /** Masquer des éléments de la page. */

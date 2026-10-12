@@ -4,9 +4,10 @@ import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
+import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { findUrlAction } from '../lib/urlRules';
-import { PLATFORMS, type Platform } from '../rules';
+import type { Platform } from '../rules';
 
 type Props = {
   platform: Platform;
@@ -23,11 +24,12 @@ type Props = {
 export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props) {
   const webRef = useRef<WebView>(null);
   const { isEnabled } = useSettings();
+  const { platforms } = useRules();
   const [banner, setBanner] = useState<string | null>(null);
   const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
-  const script = useMemo(() => buildInjectedScript(PLATFORMS, isEnabled), [isEnabled]);
+  const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
 
   if (controlsRef) {
     controlsRef.current = {
@@ -44,7 +46,7 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
 
   /** Appelé AVANT chaque chargement de page : on bloque/redirige si besoin. */
   function onShouldStartLoadWithRequest(req: ShouldStartLoadRequest): boolean {
-    const action = findUrlAction(req.url, isEnabled);
+    const action = findUrlAction(platforms, req.url, isEnabled);
     if (!action) return true;
 
     // Contenu intégré (iframe) interdit : on le bloque sans rien dire.

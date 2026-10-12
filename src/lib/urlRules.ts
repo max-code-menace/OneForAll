@@ -1,4 +1,4 @@
-import { PLATFORMS, type Platform, type Rule } from '../rules';
+import type { Platform, Rule } from '../rules';
 
 /**
  * Décide, côté React Native, quoi faire d'une URL avant de la charger.
@@ -25,11 +25,15 @@ export function hostMatches(host: string, hosts: string[]): boolean {
   return hosts.some((h) => host === h || host.endsWith(`.${h}`));
 }
 
-export function findUrlAction(url: string, isEnabled: (ruleId: string) => boolean): UrlAction | null {
+export function findUrlAction(
+  platforms: Platform[],
+  url: string,
+  isEnabled: (ruleId: string) => boolean,
+): UrlAction | null {
   const u = parseUrl(url);
   if (!u) return null;
 
-  for (const platform of PLATFORMS) {
+  for (const platform of platforms) {
     if (!hostMatches(u.host, platform.hosts)) continue;
     for (const rule of platform.rules) {
       if (!isEnabled(rule.id) || !rule.urls) continue;

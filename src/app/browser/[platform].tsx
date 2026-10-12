@@ -4,13 +4,14 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { BlockedScreen } from '../../components/BlockedScreen';
 import { SiteWebView } from '../../components/SiteWebView';
+import { useRules } from '../../lib/rules';
 import { useSettings } from '../../lib/settings';
-import { getPlatform } from '../../rules';
 
 /** Écran qui affiche un réseau social (ou l'écran « bloqué »). */
 export default function BrowserScreen() {
   const { platform: platformId } = useLocalSearchParams<{ platform: string }>();
-  const platform = getPlatform(platformId);
+  const { platforms, ready } = useRules();
+  const platform = platforms.find((p) => p.id === platformId);
   const { isEnabled, loaded } = useSettings();
   const [canGoBack, setCanGoBack] = useState(false);
   const controls = useRef<{ goBack: () => void; reload: () => void } | null>(null);
@@ -24,7 +25,7 @@ export default function BrowserScreen() {
   }
 
   // On attend les réglages pour ne pas charger la page sans les bonnes règles.
-  if (!loaded) return <Stack.Screen options={{ title: platform.name }} />;
+  if (!loaded || !ready) return <Stack.Screen options={{ title: platform.name }} />;
 
   const blocked = !!platform.blockAllRuleId && isEnabled(platform.blockAllRuleId);
 

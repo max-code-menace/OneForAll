@@ -29,6 +29,22 @@ profils, la recherche et la publication. **TikTok est bloqué**, car il ne conti
 | ⚠️ | **N'est pas affiliée** à Instagram (Meta), YouTube (Google) ni TikTok. |
 | ⚠️ | Elle affiche leurs sites web en modifiant l'affichage. Cela peut ne pas respecter leurs conditions d'utilisation. Nous n'avons connaissance d'aucune sanction pour cet usage, mais nous ne pouvons pas le garantir. |
 | ⚠️ | Quand un site change son HTML, une règle peut cesser de fonctionner jusqu'à sa mise à jour. |
+| ✅ | Les règles corrigées arrivent **sans réinstaller l'app** (voir ci-dessous). |
+
+## Mises à jour des règles sans réinstaller
+
+Instagram et YouTube changent souvent leur HTML. Les règles sont donc de simples fichiers
+JSON publics ([`src/rules/`](src/rules)) que l'app télécharge au lancement :
+
+- une correction fusionnée sur `main` atteint tout le monde en quelques minutes ;
+- le téléchargement n'envoie **aucune donnée** (GitHub voit seulement ton adresse IP) ;
+- le contenu est **vérifié strictement** avant d'être utilisé : pas de code, pas de CSS qui
+  charge une adresse, pas de redirection vers un autre site ;
+- hors ligne ou fichier invalide : l'app garde ses règles précédentes ou intégrées ;
+- **désactivable** dans Réglages → « Mettre à jour automatiquement ».
+
+Conséquence à connaître : les règles qui tournent chez tout le monde sont celles de la branche
+`main`. Les changements y sont donc relus avant d'être acceptés.
 
 ## Soutenir le projet
 
@@ -77,8 +93,9 @@ maximum par an) et expire après un an. Pour partager avec plus de monde, la pis
 ```
 src/
   app/          écrans : accueil, site (WebView), réglages
-  rules/        ⬅️ les règles par plateforme (à modifier quand un site change)
-  lib/          moteur d'injection, règles d'URL, sauvegarde des réglages
+  rules/        ⬅️ les règles par plateforme en JSON (instagram.json, youtube.json…)
+                et validate.ts, qui vérifie les fichiers avant usage
+  lib/          moteur d'injection, règles d'URL, mise à jour des règles, réglages
   components/   WebView, écran « bloqué »
 scripts/test-injection.cjs   test du moteur dans Chromium (npm run test:inject)
 ```
@@ -87,7 +104,7 @@ Vérifications : `npm run typecheck` et `npm run test:inject` (nécessite Playwr
 
 ## Feuille de route
 
-- [ ] Règles mises à jour à distance (corriger sans réinstaller)
+- [x] Règles mises à jour à distance (corriger sans réinstaller)
 - [ ] Distribution via TestFlight
 - [ ] Version Android
 - [ ] Lien de don

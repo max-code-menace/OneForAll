@@ -18,12 +18,14 @@ const ts = require('typescript');
 require.extensions['.ts'] = (module, filename) => {
   const src = fs.readFileSync(filename, 'utf8');
   const out = ts.transpileModule(src, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   });
   module._compile(out.outputText, filename);
 };
 
-const { PLATFORMS, ALL_RULES } = require('../src/rules/index.ts');
+const { DEFAULT_PLATFORMS: PLATFORMS } = require('../src/rules/index.ts');
+const { mergeRemoteRules, sanitizePlatform } = require('../src/rules/validate.ts');
+const ALL_RULES = PLATFORMS.flatMap((p) => p.rules);
 const { buildInjectedScript } = require('../src/lib/buildInjection.ts');
 const { findUrlAction } = require('../src/lib/urlRules.ts');
 
@@ -34,7 +36,7 @@ const defaults = (id) => ALL_RULES.find((r) => r.id === id).defaultEnabled;
 // ---------------------------------------------------------------------------
 function urlTests() {
   const t = (url) => {
-    const a = findUrlAction(url, defaults);
+    const a = findUrlAction(PLATFORMS, url, defaults);
     return a && (a.type === 'block' ? 'BLOCK' : a.url);
   };
   assert.equal(t('https://www.instagram.com/reels/'), 'https://www.instagram.com/');
@@ -52,8 +54,53 @@ function urlTests() {
   assert.equal(t('https://www.tiktok.com/@someone/video/1'), 'BLOCK');
   assert.equal(t('https://example.com/reels/'), null);
   // Règle désactivée => plus de redirection.
-  assert.equal(findUrlAction('https://www.instagram.com/reels/', () => false), null);
+  assert.equal(findUrlAction(PLATFORMS, 'https://www.instagram.com/reels/', () => false), null);
   console.log('✓ règles d’URL (React Native)');
+}
+
+// ---------------------------------------------------------------------------
+// 1 bis. Validation des fichiers de règles (ceux qui seront téléchargés)
+// ---------------------------------------------------------------------------
+function validationTests() {
+  const rawOf = (id) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'rules', id + '.json'), 'utf8'));
+  const clone = (o) => JSON.parse(JSON.stringify(o));
+  const base = (id) => PLATFORMS.find((p) => p.id === id);
+
+  // Les fichiers du dépôt sont valides, et css en liste de lignes est bien rassemblé.
+  for (const p of PLATFORMS) mergeRemoteRules(p, rawOf(p.id));
+  assert.match(base('instagram').rules[0].css, /display: none !important;/);
+
+  const bad = (label, id, mutate) => {
+    const raw = clone(rawOf(id));
+    mutate(raw);
+    assert.throws(() => mergeRemoteRules(base(id), raw), `devrait être refusé : ${label}`);
+  };
+  bad('CSS avec url()', 'instagram', (r) => (r.rules[0].css = ['a { background: url(https://evil.example/x) }']));
+  bad('CSS avec @import', 'instagram', (r) => (r.rules[0].css = ['@import "https://evil.example/x.css";']));
+  bad('redirection hors site', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = '//evil.example/'));
+  bad('redirection https', 'instagram', (r) => (r.rules[1].urls[0].redirectTo = 'https://evil.example/'));
+  bad('regex invalide', 'instagram', (r) => (r.rules[1].urls[0].pattern = '('));
+  bad('lien réécrit hors site', 'instagram', (r) => (r.rules[3].rewriteLinks[0].href = 'https://evil.example/'));
+  bad('version de format inconnue', 'instagram', (r) => (r.schemaVersion = 2));
+  bad('mauvaise plateforme', 'instagram', (r) => (r.id = 'youtube'));
+  bad('id de règle en double', 'instagram', (r) => (r.rules[1].id = r.rules[0].id));
+  bad('id de règle invalide', 'instagram', (r) => (r.rules[0].id = 'x y'));
+  bad('defaultEnabled absent', 'instagram', (r) => delete r.rules[0].defaultEnabled);
+  bad('TikTok débloqué (règle de blocage retirée)', 'tiktok', (r) => (r.rules = []));
+  assert.throws(() => mergeRemoteRules(base('instagram'), 'n importe quoi'));
+  assert.throws(() => mergeRemoteRules(base('instagram'), null));
+
+  // Un fichier distant ne peut pas changer l'adresse, les domaines ni le user-agent de l'app.
+  const sneaky = clone(rawOf('instagram'));
+  sneaky.startUrl = 'https://evil.example/';
+  sneaky.hosts = ['evil.example'];
+  sneaky.rules[0].evilField = 'ignoré';
+  const merged = mergeRemoteRules(base('instagram'), sneaky);
+  assert.equal(merged.startUrl, 'https://www.instagram.com/');
+  assert.deepEqual(merged.hosts, ['instagram.com']);
+  assert.equal('evilField' in merged.rules[0], false);
+  assert.throws(() => sanitizePlatform({ ...clone(rawOf('instagram')), startUrl: 'http://pas-https.example/' }));
+  console.log('✓ validation des règles distantes (fichiers dangereux refusés)');
 }
 
 // ---------------------------------------------------------------------------
@@ -191,6 +238,7 @@ async function browserTests() {
 }
 
 urlTests();
+validationTests();
 browserTests().catch((e) => {
   console.error(e);
   process.exit(1);

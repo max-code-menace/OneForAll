@@ -1,12 +1,13 @@
 import { Link, router, Stack } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
-import { PLATFORMS } from '../rules';
 
 /** Écran d'accueil : un gros bouton par réseau social. */
 export default function HomeScreen() {
   const { isEnabled } = useSettings();
+  const { platforms } = useRules();
 
   return (
     <View style={styles.container}>
@@ -22,7 +23,7 @@ export default function HomeScreen() {
 
       <Text style={styles.subtitle}>Les réseaux sociaux, sans le défilement infini.</Text>
 
-      {PLATFORMS.map((p) => {
+      {platforms.map((p) => {
         const blocked = !!p.blockAllRuleId && isEnabled(p.blockAllRuleId);
         return (
           <Pressable
