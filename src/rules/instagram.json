@@ -27,8 +27,14 @@
       "description": "Retire le bouton Reels de la barre de navigation.",
       "defaultEnabled": true,
       "css": [
+        "/* Le lien Reels… */",
         "a[href=\"/reels/\"],",
-        "a[href^=\"/reels/?\"] { display: none !important; }"
+        "a[href^=\"/reels/?\"],",
+        "/* …et la case de la barre qui le contient (jusqu'à 3 niveaux, tant qu'elle ne contient",
+        "   aucun autre lien) : sinon la case vide reste et laisse un trou entre les onglets. */",
+        ":is(div, span, li):has(> a[href=\"/reels/\"]):not(:has(a:not([href=\"/reels/\"]))),",
+        ":is(div, span, li):has(> * > a[href=\"/reels/\"]):not(:has(a:not([href=\"/reels/\"]))),",
+        ":is(div, span, li):has(> * > * > a[href=\"/reels/\"]):not(:has(a:not([href=\"/reels/\"]))) { display: none !important; }"
       ]
     },
     {
@@ -87,8 +93,9 @@
     {
       "id": "ig.feedReels",
       "label": "Masquer les Reels dans le fil",
-      "description": "Retire les posts du fil qui sont des Reels.",
+      "description": "Retire les posts du fil qui sont des Reels. Quand il ne reste plus que des Reels, le fil affiche « Tu as tout vu ».",
       "defaultEnabled": true,
+      "feedEnd": true,
       "hide": [
         {
           "selector": "article a[href*=\"/reel/\"]",

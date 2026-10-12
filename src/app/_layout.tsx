@@ -39,7 +39,7 @@ function Navigation() {
         <Stack.Screen name="about" />
         <Stack.Screen
           name="browser/[platform]"
-          // Dans un site, les bords servent à changer d'onglet ; le bouton rond ramène à l'accueil.
+          // Dans un site, pas de glissement gauche/droite : seul le bouton rond ramène à l'accueil.
           options={{ gestureEnabled: false }}
         />
       </Stack>

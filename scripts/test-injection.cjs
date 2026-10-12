@@ -343,6 +343,54 @@ async function browserTests() {
   assert.equal(await hidden(page, '#friend'), false, 'post d’un ami visible');
   await page.close();
 
+  // Barre d'onglets : la case du Reels disparaît entièrement, sans laisser de trou.
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div id="bar" style="display:flex;justify-content:space-around;width:300px">' +
+      ['/', '/explore/', '/reels/', '/direct/inbox/', '/martin/'].map((h, i) =>
+        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span></div>').join('') +
+      '</div>');
+  });
+  await page.waitForTimeout(200);
+  assert.equal(await hidden(page, '#slot2'), true, 'case Reels masquée en entier');
+  assert.equal(await hidden(page, '#slot1'), false, 'case Recherche visible');
+  assert.equal(await hidden(page, '#bar'), false, 'barre visible');
+  const widths = await page.$$eval('#bar > .slot', (els) => els.filter((e) => e.offsetParent).map((e) => e.offsetWidth));
+  assert.deepEqual(widths, [75, 75, 75, 75], `4 onglets de même largeur, sans trou (${widths})`);
+  await page.close();
+
+  // --- Fil plein de Reels : pas d'espace vide, puis « Tu as tout vu » ---
+  // Chaque publication est dans une case de hauteur fixe (comme une liste qui réserve la place).
+  page = await browser.newPage({ viewport: { width: 390, height: 800 } });
+  await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: `<html><head></head><body style="margin:0">
+    <main><div id="list">
+      <div class="row" id="row0" style="min-height:500px"><article id="p0"><a href="/p/A/">photo</a></article></div>
+      <div class="row" id="row1" style="min-height:500px"><article id="p1"><a href="/p/B/">photo</a></article></div>
+      ${Array.from({ length: 15 }, (_, i) => `<div class="row" id="reelrow${i}" style="min-height:500px"><article><a href="/reel/R${i}/">reel</a></article></div>`).join('')}
+    </div></main></body></html>` }));
+  await page.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+  await page.addInitScript(buildInjectedScript(PLATFORMS, noFollow));
+  await page.goto('https://www.instagram.com/');
+  await page.waitForTimeout(300);
+  assert.equal(await hidden(page, '#reelrow0'), true, 'la case du Reel masqué ne laisse pas d’espace vide');
+  assert.equal(await hidden(page, '#row1'), false, 'la case d’une photo reste');
+  assert.equal(await page.evaluate(() => document.getElementById('list').offsetHeight), 1000, 'le fil ne fait que la hauteur des photos');
+  const cardShown = () => page.evaluate(() => {
+    const c = document.getElementById('sans-reels-feed-end');
+    return !!c && getComputedStyle(c).display !== 'none';
+  });
+  assert.equal(await cardShown(), false, 'pas de carte tant qu’on voit encore des photos');
+  await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+  await page.waitForTimeout(200);
+  assert.equal(await cardShown(), true, '« Tu as tout vu » après la dernière photo');
+  assert.match(await page.textContent('#sans-reels-feed-end'), /Tu as tout vu/);
+  await page.click('#sans-reels-feed-end button');
+  await page.waitForTimeout(800);
+  assert.equal(await page.evaluate(() => window.scrollY), 0, '« Revenir en haut » remonte');
+  assert.equal(await cardShown(), false, 'la carte disparaît en haut du fil');
+  await page.close();
+
   // Règles désactivées => rien n'est masqué.
   page = await open('https://www.instagram.com/', () => false);
   assert.equal(await hidden(page, '#reels'), false, 'règle désactivée respectée');
@@ -425,32 +473,54 @@ async function browserTests() {
   assert.equal(await page.evaluate(() => window.__siteMoves), 8, 'story : le site reçoit le glissement');
   await page.close();
 
-  // --- Bords de l'écran : glisser vers l'intérieur = changer d'onglet ; un appui reste au site ---
-  page = await openViewer(() => false);
-  const edgeCdp = await page.context().newCDPSession(page);
-  async function drag(x1, x2, y = 300) {
-    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x1, y }] });
-    for (let i = 1; i <= 6; i++) {
-      await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 + ((x2 - x1) * i) / 6, y }] });
-    }
-    await edgeCdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await page.waitForTimeout(100);
+  // --- Fluidité : redirection SANS recharger la page quand le site a un routeur ---
+  // Fausse page avec un « routeur » qui réaffiche le contenu à chaque popstate (comme Instagram).
+  async function openSpa(withRouter) {
+    const p = await browser.newPage();
+    let loads = 0;
+    await p.route('**/*', (route) => {
+      loads++;
+      route.fulfill({ contentType: 'text/html', body: `<html><head></head><body>
+        <a id="exploreLink" href="/explore/">Explore</a><a id="homeLink" href="/">Accueil</a><div id="view"></div>
+        <script>
+          ${withRouter ? "window.addEventListener('popstate', () => { const d = document.createElement('div'); d.textContent = location.pathname; document.getElementById('view').appendChild(d); });" : ''}
+        </script></body></html>` });
+    });
+    await p.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
+    });
+    await p.addInitScript(buildInjectedScript(PLATFORMS, defaults));
+    await p.goto('https://www.instagram.com/p/AAA/');
+    await p.waitForTimeout(250);
+    return { p, loads: () => loads };
   }
-  const edges = async () => (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'edgeSwipe').map((m) => m.dir);
-  await drag(372, 250); // depuis le bord droit (avant la barre de défilement de Chromium)
-  await drag(5, 150); // depuis le bord gauche
-  await drag(200, 60); // au milieu : rien
-  await drag(372, 360); // trop court : rien
-  assert.deepEqual(await edges(), [1, -1], 'glissements depuis les bords signalés');
+  let spa = await openSpa(true);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(1000);
+  assert.equal(pathOf(spa.p), '/explore/search/', 'Explore -> recherche');
+  assert.equal(spa.loads(), 1, 'Explore -> recherche sans recharger la page');
+  await spa.p.click('#homeLink');
+  await spa.p.waitForTimeout(1000);
+  assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
+  assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
+  await spa.p.close();
+  // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
+  spa = await openSpa(false);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(1500);
+  assert.equal(pathOf(spa.p), '/explore/search/', 'sans routeur : bonne adresse');
+  assert.equal(spa.loads(), 2, 'sans routeur : page rechargée une fois');
+  await spa.p.close();
+
+  // Défilement fluide : aucun écouteur qui bloque le défilement sur la page elle-même.
+  page = await openViewer(defaults);
   await page.evaluate(() => {
-    const b = document.createElement('button');
-    b.id = 'edgeBtn';
-    b.style.cssText = 'position:fixed;left:0;top:20px;width:30px;height:30px;z-index:9';
-    b.onclick = () => (window.__tapped = true);
-    document.body.appendChild(b);
+    document.body.insertAdjacentHTML('beforeend', '<div id="feed" style="position:fixed;left:0;top:0;width:100%;height:150px;overflow-y:scroll;z-index:5;background:#eee"><div style="height:2000px">fil</div></div>');
   });
-  await page.tap('#edgeBtn');
-  assert.equal(await page.evaluate(() => window.__tapped), true, 'un bouton au bord de l’écran répond');
+  await page.waitForTimeout(300);
+  await swipe(page, 200, 140, 20);
+  assert.ok((await scrollTop(page, '#feed')) > 0, 'le fil hors vidéo défile normalement');
   await page.close();
 
   // --- YouTube ---
