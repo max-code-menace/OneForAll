@@ -29,7 +29,7 @@ const TOUR: TourStep[] = [
   {
     target: 'edge-right',
     title: 'Onglet suivant',
-    text: 'Glisse depuis le bord droit vers la gauche : tu passes, par exemple, du fil et des stories aux messages, sans quitter le réseau.',
+    text: 'Glisse ton doigt de droite à gauche pour découvrir l’onglet suivant sans quitter la page.',
     fx: 0.5,
     fy: 0.5,
     r: 14,
@@ -38,7 +38,7 @@ const TOUR: TourStep[] = [
   {
     target: 'edge-left',
     title: 'Onglet précédent',
-    text: 'Glisse depuis le bord gauche vers la droite pour revenir à l’onglet d’avant.',
+    text: 'Glisse ton doigt de gauche à droite pour revenir à l’onglet précédent sans quitter la page.',
     fx: 0.5,
     fy: 0.5,
     r: 14,
