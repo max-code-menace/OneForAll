@@ -1,13 +1,16 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
+import { findBannedSite } from '../lib/banned';
 import { AFTER_LOAD_SCRIPT, buildInjectedScript } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
-import { findUrlAction } from '../lib/urlRules';
+import { useTheme } from '../lib/theme';
+import { findUrlAction, parseUrl } from '../lib/urlRules';
 import type { Platform } from '../rules';
+import { Toast, type ToastHandle } from './Toast';
 
 type Props = {
   platform: Platform;
@@ -15,18 +18,22 @@ type Props = {
   onCanGoBackChange?: (canGoBack: boolean) => void;
   /** Donne au parent les commandes "retour" et "recharger". */
   controlsRef?: React.RefObject<{ goBack: () => void; reload: () => void } | null>;
+  /** Bandeau affiché 0,5 s après l'ouverture et à chaque rechargement (ex. « Reels masqués »). */
+  welcome?: string;
 };
 
 /**
  * WebView qui affiche le site en appliquant les règles activées.
  * (Version iOS/Android. La version web est dans SiteWebView.web.tsx.)
  */
-export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props) {
+export function SiteWebView({ platform, onCanGoBackChange, controlsRef, welcome }: Props) {
+  const t = useTheme();
   const webRef = useRef<WebView>(null);
-  const { isEnabled } = useSettings();
+  const { isEnabled, diagnostic } = useSettings();
   const { platforms } = useRules();
-  const [banner, setBanner] = useState<string | null>(null);
-  const bannerTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const toast = useRef<ToastHandle>(null);
+  /** Chemin de la page affichée (mode diagnostic uniquement). */
+  const [path, setPath] = useState('');
 
   // Le script dépend des réglages : s'ils changent, il est reconstruit.
   const script = useMemo(() => buildInjectedScript(platforms, isEnabled), [platforms, isEnabled]);
@@ -34,18 +41,31 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
   if (controlsRef) {
     controlsRef.current = {
       goBack: () => webRef.current?.goBack(),
-      reload: () => webRef.current?.reload(),
+      reload: () => {
+        webRef.current?.reload();
+        if (welcome) toast.current?.show(welcome, 500);
+      },
     };
   }
 
+  // À l'ouverture : rappel discret de ce qui est masqué.
+  useEffect(() => {
+    if (welcome) toast.current?.show(welcome, 500);
+  }, [welcome]);
+
   function showBanner(text: string) {
-    setBanner(text);
-    if (bannerTimer.current) clearTimeout(bannerTimer.current);
-    bannerTimer.current = setTimeout(() => setBanner(null), 2500);
+    toast.current?.show(text);
   }
 
   /** Appelé AVANT chaque chargement de page : on bloque/redirige si besoin. */
   function onShouldStartLoadWithRequest(req: ShouldStartLoadRequest): boolean {
+    // Sites bannis (TikTok) : jamais ouverts, quel que soit le lien cliqué.
+    const banned = findBannedSite(req.url);
+    if (banned) {
+      if (req.isTopFrame !== false) showBanner(`${banned} est bloqué`);
+      return false;
+    }
+
     const action = findUrlAction(platforms, req.url, isEnabled);
     if (!action) return true;
 
@@ -53,9 +73,9 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
     if (req.isTopFrame === false) return false;
 
     if (action.type === 'block') {
-      showBanner(`🚫 ${action.platform.name} est bloqué`);
+      showBanner('Page bloquée');
     } else {
-      showBanner(`↪︎ ${action.rule.label}`);
+      showBanner(action.rule.label);
       webRef.current?.injectJavaScript(`location.replace(${JSON.stringify(action.url)}); true;`);
     }
     return false;
@@ -65,8 +85,9 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
   function onMessage(e: WebViewMessageEvent) {
     try {
       const msg = JSON.parse(e.nativeEvent.data);
-      if (msg.type === 'blocked') showBanner(`🚫 ${msg.label ?? 'Bloqué'}`);
-      if (msg.type === 'redirected' && msg.label) showBanner(`↪︎ ${msg.label}`);
+      if (msg.type === 'blocked') showBanner(msg.label ?? 'Page bloquée');
+      if (msg.type === 'redirected' && msg.label) showBanner(msg.label);
+      if (msg.type === 'path' && typeof msg.path === 'string') setPath(msg.path);
     } catch {
       // message qui ne vient pas de nous : on l'ignore
     }
@@ -74,6 +95,8 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
 
   function onNavigationStateChange(nav: WebViewNavigation) {
     onCanGoBackChange?.(nav.canGoBack);
+    const u = parseUrl(nav.url);
+    if (u) setPath(u.path);
   }
 
   return (
@@ -105,26 +128,29 @@ export function SiteWebView({ platform, onCanGoBackChange, controlsRef }: Props)
         pullToRefreshEnabled
         setSupportMultipleWindows={false}
       />
-      {banner && (
-        <View pointerEvents="none" style={styles.banner}>
-          <Text style={styles.bannerText}>{banner}</Text>
+      {diagnostic && (
+        <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
+          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+            Page : {path || '…'}
+          </Text>
         </View>
       )}
+      <Toast ref={toast} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  banner: {
+  diagnostic: {
     position: 'absolute',
-    bottom: 40,
+    top: 8,
     alignSelf: 'center',
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    maxWidth: '90%',
+    opacity: 0.92,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: '92%',
   },
-  bannerText: { color: '#fff', fontSize: 14 },
+  diagnosticText: { fontSize: 12, fontFamily: 'Menlo' },
 });

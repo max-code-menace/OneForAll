@@ -1,6 +1,6 @@
 /**
  * Test du script injecté, dans un vrai navigateur (Chromium via Playwright),
- * sur de fausses pages Instagram / YouTube / TikTok.
+ * sur de fausses pages Instagram / YouTube.
  *
  * Lancer :  npm run test:inject
  * (nécessite Playwright : `npm i -D playwright` ou une installation globale)
@@ -28,6 +28,7 @@ const { mergeRemoteRules, sanitizePlatform } = require('../src/rules/validate.ts
 const ALL_RULES = PLATFORMS.flatMap((p) => p.rules);
 const { buildInjectedScript } = require('../src/lib/buildInjection.ts');
 const { findUrlAction } = require('../src/lib/urlRules.ts');
+const { findBannedSite } = require('../src/lib/banned.ts');
 
 const defaults = (id) => ALL_RULES.find((r) => r.id === id).defaultEnabled;
 
@@ -51,11 +52,37 @@ function urlTests() {
   assert.equal(t('https://www.instagram.com/explore/search/'), null);
   assert.equal(t('https://m.youtube.com/shorts/abc123?feature=share'), 'https://m.youtube.com/watch?v=abc123');
   assert.equal(t('https://m.youtube.com/watch?v=abc123'), null);
-  assert.equal(t('https://www.tiktok.com/@someone/video/1'), 'BLOCK');
   assert.equal(t('https://example.com/reels/'), null);
   // Règle désactivée => plus de redirection.
   assert.equal(findUrlAction(PLATFORMS, 'https://www.instagram.com/reels/', () => false), null);
-  console.log('✓ règles d’URL (React Native)');
+  // Facebook : les Reels renvoient au fil ; une vidéo normale (/watch/?v=…) reste visible.
+  assert.equal(t('https://m.facebook.com/reel/123456/'), 'https://m.facebook.com/');
+  assert.equal(t('https://www.facebook.com/reels/'), 'https://www.facebook.com/');
+  assert.equal(t('https://m.facebook.com/watch/?v=123'), null);
+  assert.equal(t('https://m.facebook.com/reelsfan/'), null);
+  assert.equal(t('https://m.facebook.com/messages/'), null);
+  assert.deepEqual(PLATFORMS.map((p) => p.id), ['instagram', 'youtube', 'facebook']);
+
+  // TikTok est banni, partout, y compris via les liens courts. Les noms qui y ressemblent ne le sont pas.
+  const banned = (u) => findBannedSite(u);
+  for (const u of [
+    'https://www.tiktok.com/@someone/video/1',
+    'https://tiktok.com/',
+    'https://vm.tiktok.com/ZMabc/',
+    'https://vt.tiktok.com/ZSabc/',
+    'https://m.tiktok.com/v/123',
+    'https://www.tiktokv.com/x',
+    'https://WWW.TIKTOK.COM:443/foo',
+  ]) assert.equal(banned(u), 'TikTok', `devrait être banni : ${u}`);
+  for (const u of [
+    'https://www.instagram.com/',
+    'https://m.youtube.com/watch?v=x',
+    'https://nottiktok.com/',
+    'https://tiktok.com.evil.example/',
+    'https://example.com/?u=https://www.tiktok.com/',
+    'about:blank',
+  ]) assert.equal(banned(u), null, `ne devrait pas être banni : ${u}`);
+  console.log('✓ règles d’URL (React Native) et sites bannis');
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +113,6 @@ function validationTests() {
   bad('id de règle en double', 'instagram', (r) => (r.rules[1].id = r.rules[0].id));
   bad('id de règle invalide', 'instagram', (r) => (r.rules[0].id = 'x y'));
   bad('defaultEnabled absent', 'instagram', (r) => delete r.rules[0].defaultEnabled);
-  bad('TikTok débloqué (règle de blocage retirée)', 'tiktok', (r) => (r.rules = []));
   assert.throws(() => mergeRemoteRules(base('instagram'), 'n importe quoi'));
   assert.throws(() => mergeRemoteRules(base('instagram'), null));
 
@@ -129,7 +155,6 @@ const PAGES = {
     <ytm-reel-shelf-renderer id="shelf">shorts…</ytm-reel-shelf-renderer>
     <ytm-rich-item-renderer id="video"><a href="/watch?v=x">vidéo</a></ytm-rich-item-renderer>
     <ytm-rich-item-renderer id="short"><a href="/shorts/y">short</a></ytm-rich-item-renderer>`,
-  'www.tiktok.com': `<h1 id="tt">TikTok</h1>`,
 };
 
 async function browserTests() {
@@ -148,6 +173,11 @@ async function browserTests() {
     await page.route('**/*', (route) => {
       const host = new URL(route.request().url()).host;
       route.fulfill({ contentType: 'text/html', body: `<html><head></head><body>${PAGES[host] ?? ''}</body></html>` });
+    });
+    // Fait semblant d'être la WebView de l'app : on garde les messages envoyés à l'app.
+    await page.addInitScript(() => {
+      window.__msgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => window.__msgs.push(JSON.parse(m)) };
     });
     // Équivalent de injectedJavaScriptBeforeContentLoaded.
     await page.addInitScript(buildInjectedScript(PLATFORMS, isEnabled));
@@ -183,6 +213,11 @@ async function browserTests() {
   // Navigation interne (pushState) vers /reels/ => retour accueil.
   await page.evaluate(() => history.pushState({}, '', '/reels/'));
   await page.waitForURL('https://www.instagram.com/');
+  // Le mode diagnostic reçoit le chemin de la page, y compris après une navigation interne.
+  await page.evaluate(() => history.pushState({}, '', '/p/AAA/'));
+  await page.waitForTimeout(300);
+  const paths = (await page.evaluate(() => window.__msgs)).filter((m) => m.type === 'path').map((m) => m.path);
+  assert.ok(paths.includes('/p/AAA/'), `chemin signalé : ${paths}`);
   // Clic sur un lien vers un Reel => intercepté.
   await page.evaluate(() => {
     const a = document.createElement('a');
@@ -226,11 +261,6 @@ async function browserTests() {
   page = await open('https://m.youtube.com/shorts/abc123');
   await page.waitForTimeout(200);
   assert.equal(pathOf(page), '/watch?v=abc123', 'Short -> /watch');
-  await page.close();
-
-  // --- TikTok ---
-  page = await open('https://www.tiktok.com/');
-  assert.match(await page.textContent('body'), /Page bloquée/, 'TikTok bloqué');
   await page.close();
 
   await browser.close();

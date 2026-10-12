@@ -10,7 +10,7 @@
   et `src/rules/`.
 
 ## La seule connexion que fait l'app elle-même : les règles
-Quand tu ouvres l'app, elle télécharge 3 petits fichiers publics (`src/rules/*.json` de ce dépôt,
+Quand tu ouvres l'app, elle télécharge 2 petits fichiers publics (`src/rules/*.json` de ce dépôt,
 sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des règles.
 
 - **Aucune donnée n'est envoyée** : c'est une simple requête de téléchargement, sans identifiant,
@@ -24,7 +24,7 @@ sur `raw.githubusercontent.com`) pour récupérer d'éventuelles corrections des
   ses règles intégrées et ne contacte personne.
 
 ## Ce que font les sites que tu ouvres
-Instagram, YouTube et les autres sites s'affichent dans l'app comme dans un navigateur.
+Instagram, YouTube, Facebook et les autres sites s'affichent dans l'app comme dans un navigateur.
 **Ils reçoivent donc les mêmes informations que d'habitude** (ton compte, ton adresse IP, tes
 activités sur leur site) et appliquent leurs propres politiques de confidentialité. OneForAll
 ne peut pas l'empêcher. Tes connexions (cookies) sont conservées sur ton téléphone, par iOS,

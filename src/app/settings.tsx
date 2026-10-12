@@ -1,73 +1,167 @@
-import { Alert, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useRef } from 'react';
+import { ActivityIndicator, Alert, Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { BackButton, Card, LinkRow, SectionTitle, Separator, SwitchRow } from '../components/ui';
+import { useIntro } from '../lib/intro';
 import { useRules, type RulesStatus } from '../lib/rules';
 import { useSettings } from '../lib/settings';
+import { EASE, useReduceMotion, useTheme, type Theme } from '../lib/theme';
 
 /** Réglages : un interrupteur par règle, groupés par plateforme. */
 export default function SettingsScreen() {
-  const { isEnabled, setEnabled, resetAll } = useSettings();
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic } = useSettings();
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
+  const { showOnboarding } = useIntro();
+
+  function replayOnboarding() {
+    if (router.canDismiss()) router.dismissAll();
+    showOnboarding();
+  }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {platforms.map((p) => (
-        <View key={p.id} style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: p.color }]}>{p.name}</Text>
-          <View style={styles.card}>
-            {p.rules.map((rule, i) => (
-              <View key={rule.id} style={[styles.row, i > 0 && styles.separator]}>
-                <View style={styles.rowText}>
-                  <Text style={styles.label}>{rule.label}</Text>
-                  {rule.description && <Text style={styles.description}>{rule.description}</Text>}
-                </View>
-                <Switch value={isEnabled(rule.id)} onValueChange={(v) => setEnabled(rule.id, v)} />
-              </View>
-            ))}
-          </View>
-        </View>
-      ))}
-
-      <View style={styles.section}>
-        <Text style={[styles.sectionTitle, { color: '#555' }]}>Mise à jour des règles</Text>
-        <View style={styles.card}>
-          <View style={styles.row}>
-            <View style={styles.rowText}>
-              <Text style={styles.label}>Mettre à jour automatiquement</Text>
-              <Text style={styles.description}>
-                Quand Instagram ou YouTube changent, les règles corrigées sont téléchargées depuis
-                GitHub (fichiers publics, aucune donnée envoyée). Désactivé : l'app n'utilise que
-                ses règles intégrées et ne contacte personne.
-              </Text>
-            </View>
-            <Switch value={autoUpdate} onValueChange={setAutoUpdate} />
-          </View>
-          {autoUpdate && (
-            <Pressable style={[styles.row, styles.separator]} onPress={refresh}>
-              <View style={styles.rowText}>
-                <Text style={styles.link}>Vérifier maintenant</Text>
-                <Text style={styles.description}>{statusText(status)}</Text>
-              </View>
-            </Pressable>
-          )}
-        </View>
+    <View style={{ flex: 1, backgroundColor: t.bg, paddingTop: insets.top }}>
+      <View style={styles.bar}>
+        <BackButton label="Accueil" />
       </View>
+      <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 48 }]}>
+        <Text style={[styles.title, { color: t.ink }]}>Réglages</Text>
 
-      <Pressable
-        style={styles.reset}
-        onPress={() =>
-          Alert.alert('Réinitialiser ?', 'Toutes les règles reprennent leur valeur par défaut.', [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Réinitialiser', style: 'destructive', onPress: resetAll },
-          ])
-        }
-      >
-        <Text style={styles.resetText}>Réinitialiser les réglages</Text>
-      </Pressable>
+        {platforms.map((p) => (
+          <View key={p.id} style={styles.section}>
+            <SectionTitle initial={p.name[0]}>{p.name}</SectionTitle>
+            <Card>
+              {p.rules.map((rule, i) => (
+                <SwitchRow
+                  key={rule.id}
+                  label={rule.label}
+                  description={rule.description}
+                  value={isEnabled(rule.id)}
+                  onValueChange={(v) => setEnabled(rule.id, v)}
+                  border={i > 0}
+                />
+              ))}
+            </Card>
+          </View>
+        ))}
 
-      <Text style={styles.note}>
-        Les changements s'appliquent tout de suite (la page se recharge).
-      </Text>
-    </ScrollView>
+        <View style={styles.section}>
+          <SectionTitle initial="T">TikTok</SectionTitle>
+          <Card>
+            <View style={styles.fixedRow}>
+              <View style={{ flex: 1, gap: 3 }}>
+                <Text style={[styles.label, { color: t.ink }]}>TikTok est toujours bloqué</Text>
+                <Text style={[styles.description, { color: t.ink2 }]}>
+                  Il n’y a que des vidéos courtes sur TikTok. Ses liens ne s’ouvrent jamais, d’où qu’ils viennent. Ce
+                  blocage ne se désactive pas.
+                </Text>
+              </View>
+              <View style={[styles.badge, { backgroundColor: t.surface2 }]}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: t.ink2 }}>Bloqué</Text>
+              </View>
+            </View>
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle>Mise à jour des règles</SectionTitle>
+          <Card>
+            <SwitchRow
+              label="Mettre à jour automatiquement"
+              description="Quand Instagram, YouTube ou Facebook changent, les règles corrigées sont téléchargées depuis GitHub (fichiers publics, aucune donnée envoyée). Désactivé : l'app n'utilise que ses règles intégrées et ne contacte personne."
+              value={autoUpdate}
+              onValueChange={setAutoUpdate}
+            />
+            <Separator />
+            <View style={styles.statusRow}>
+              <StatusLine status={status} t={t} />
+              {autoUpdate && (
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={status.state === 'checking'}
+                  onPress={refresh}
+                  style={({ pressed }) => [
+                    styles.check,
+                    { backgroundColor: t.primarySoft, opacity: status.state === 'checking' ? 0.5 : pressed ? 0.7 : 1 },
+                  ]}
+                >
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: t.onPrimarySoft }}>Vérifier maintenant</Text>
+                </Pressable>
+              )}
+            </View>
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle>Diagnostic</SectionTitle>
+          <Card>
+            <SwitchRow
+              label="Afficher l'adresse de la page"
+              description="Affiche en haut du site le chemin de la page (sans les paramètres), par exemple /reel/…. Utile pour signaler une règle qui ne marche pas. Rien n'est envoyé."
+              value={diagnostic}
+              onValueChange={setDiagnostic}
+            />
+          </Card>
+        </View>
+
+        <Card>
+          <LinkRow label="À propos de OneForAll" onPress={() => router.push('/about')} />
+          <Separator />
+          <LinkRow label="Revoir la présentation" onPress={replayOnboarding} />
+        </Card>
+
+        <View style={{ alignItems: 'center', gap: 8 }}>
+          <Pressable
+            accessibilityRole="button"
+            style={styles.reset}
+            onPress={() =>
+              Alert.alert('Réinitialiser ?', 'Toutes les règles reprennent leur valeur par défaut.', [
+                { text: 'Annuler', style: 'cancel' },
+                { text: 'Réinitialiser', style: 'destructive', onPress: resetAll },
+              ])
+            }
+          >
+            <Text style={{ fontSize: 17, color: t.danger }}>Réinitialiser les réglages</Text>
+          </Pressable>
+          <Text style={[styles.note, { color: t.ink3 }]}>
+            Les changements s'appliquent tout de suite (la page se recharge).
+          </Text>
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
+/** Pastille d'état + texte. Pendant la vérification : une petite roue. */
+function StatusLine({ status, t }: { status: RulesStatus; t: Theme }) {
+  const reduce = useReduceMotion();
+  const pop = useRef(new Animated.Value(1)).current;
+  const checking = status.state === 'checking';
+
+  // Quand le résultat arrive, la pastille apparaît doucement (0.4 → 1).
+  useEffect(() => {
+    if (checking || reduce) return;
+    pop.setValue(0.4);
+    Animated.timing(pop, { toValue: 1, duration: 320, easing: EASE, useNativeDriver: true }).start();
+  }, [status, checking, reduce, pop]);
+
+  const dot =
+    status.state === 'updated' ? t.primary : status.state === 'failed' ? t.accent : t.ink3;
+
+  return (
+    <View style={styles.status}>
+      <View style={styles.statusIcon}>
+        {checking ? (
+          <ActivityIndicator size="small" color={t.primary} style={{ transform: [{ scale: 0.7 }] }} />
+        ) : (
+          <Animated.View style={[styles.statusDot, { backgroundColor: dot, transform: [{ scale: pop }] }]} />
+        )}
+      </View>
+      <Text style={{ flex: 1, fontSize: 15, lineHeight: 20, color: t.ink2 }}>{statusText(status)}</Text>
+    </View>
   );
 }
 
@@ -78,7 +172,7 @@ function statusText(status: RulesStatus): string {
     case 'checking':
       return 'Vérification en cours…';
     case 'updated':
-      return `À jour — vérifié à ${formatTime(status.checkedAt)}.`;
+      return `À jour — vérifié à ${formatTime(status.checkedAt)}`;
     case 'failed':
       return `Vérification impossible à ${formatTime(status.checkedAt)} (hors ligne ?). Règles précédentes conservées.`;
   }
@@ -90,17 +184,19 @@ function formatTime(ms: number): string {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, paddingBottom: 48, gap: 24, backgroundColor: '#f2f2f7' },
-  section: { gap: 8 },
-  sectionTitle: { fontSize: 14, fontWeight: '700', textTransform: 'uppercase', marginLeft: 12 },
-  card: { backgroundColor: '#fff', borderRadius: 12, overflow: 'hidden' },
-  row: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 12 },
-  separator: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#ccc' },
-  rowText: { flex: 1, gap: 2 },
-  label: { fontSize: 16 },
-  link: { fontSize: 16, color: '#007AFF' },
-  description: { fontSize: 13, color: '#777' },
-  reset: { alignSelf: 'center', padding: 12 },
-  resetText: { color: '#FF3B30', fontSize: 16 },
-  note: { fontSize: 13, color: '#888', textAlign: 'center' },
+  bar: { height: 44, justifyContent: 'center', paddingHorizontal: 8 },
+  container: { paddingTop: 4, paddingHorizontal: 20, gap: 28 },
+  title: { fontSize: 34, fontWeight: '700', letterSpacing: -0.68 },
+  section: { gap: 10 },
+  label: { fontSize: 17, lineHeight: 22 },
+  description: { fontSize: 13, lineHeight: 18 },
+  fixedRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 13 },
+  badge: { paddingVertical: 5, paddingHorizontal: 10, borderRadius: 999 },
+  statusRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12, minHeight: 44 },
+  status: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  statusIcon: { width: 14, height: 14, alignItems: 'center', justifyContent: 'center' },
+  statusDot: { width: 8, height: 8, borderRadius: 4 },
+  check: { minHeight: 44, paddingHorizontal: 16, borderRadius: 22, justifyContent: 'center' },
+  reset: { minHeight: 44, paddingHorizontal: 16, justifyContent: 'center' },
+  note: { fontSize: 13, textAlign: 'center' },
 });

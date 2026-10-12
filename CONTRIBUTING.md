@@ -1,10 +1,10 @@
 # Contribuer à OneForAll
 
-Merci ! Le plus utile : **réparer une règle cassée**. Instagram et YouTube changent souvent leur HTML.
+Merci ! Le plus utile : **réparer une règle cassée**. Instagram, YouTube et Facebook changent souvent leur HTML.
 
 ## Corriger ou ajouter une règle
 
-1. Ouvre le fichier de la plateforme : `src/rules/instagram.json`, `youtube.json` ou `tiktok.json`.
+1. Ouvre le fichier de la plateforme : `src/rules/instagram.json` ou `src/rules/youtube.json`.
 2. Chaque règle correspond à un interrupteur dans les Réglages. Les champs sont expliqués
    dans `src/rules/types.ts` (dans le JSON, `css` est une liste de lignes) :
    - `css` : masque directement des éléments ;

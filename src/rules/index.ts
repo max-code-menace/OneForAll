@@ -1,5 +1,5 @@
+import facebookJson from './facebook.json';
 import instagramJson from './instagram.json';
-import tiktokJson from './tiktok.json';
 import { sanitizePlatform } from './validate';
 import youtubeJson from './youtube.json';
 
@@ -13,4 +13,4 @@ export { mergeRemoteRules, sanitizePlatform, SCHEMA_VERSION } from './validate';
  *
  * Ordre = ordre d'affichage sur l'accueil et dans les réglages.
  */
-export const DEFAULT_PLATFORMS = [instagramJson, youtubeJson, tiktokJson].map(sanitizePlatform);
+export const DEFAULT_PLATFORMS = [instagramJson, youtubeJson, facebookJson].map(sanitizePlatform);

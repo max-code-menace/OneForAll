@@ -18,7 +18,7 @@ import type { HideRule, Platform, RewriteLinkRule, Rule, UrlRule } from './types
 /** À incrémenter si le format change de façon incompatible. */
 export const SCHEMA_VERSION = 1;
 
-const PLATFORM_IDS = ['instagram', 'youtube', 'tiktok'] as const;
+const PLATFORM_IDS = ['instagram', 'youtube', 'facebook'] as const;
 const MAX_CSS = 20_000;
 const MAX_RULES = 60;
 
@@ -181,11 +181,6 @@ export function sanitizePlatform(raw: unknown): Platform {
   };
   const userAgent = optionalText(raw.userAgent, 'userAgent', 400);
   if (userAgent) platform.userAgent = userAgent;
-  const blockAll = optionalText(raw.blockAllRuleId, 'blockAllRuleId', 60);
-  if (blockAll) {
-    if (!rules.some((r) => r.id === blockAll)) fail('blockAllRuleId', `la règle « ${blockAll} » n'existe pas`);
-    platform.blockAllRuleId = blockAll;
-  }
   return platform;
 }
 
@@ -200,9 +195,5 @@ export function sanitizePlatform(raw: unknown): Platform {
 export function mergeRemoteRules(base: Platform, raw: unknown): Platform {
   const remote = sanitizePlatform(raw);
   if (remote.id !== base.id) fail('id', `fichier « ${remote.id} » reçu à la place de « ${base.id} »`);
-  // Un fichier distant ne doit pas pouvoir « débloquer » TikTok en supprimant la règle de blocage.
-  if (base.blockAllRuleId && !remote.rules.some((r) => r.id === base.blockAllRuleId)) {
-    fail('rules', `la règle « ${base.blockAllRuleId} » est obligatoire`);
-  }
   return { ...base, rules: remote.rules };
 }
