@@ -22,7 +22,10 @@ ses amis (via TestFlight), puis tout le monde.
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
 - `src/components/SiteWebView.tsx` : la WebView (iOS). `SiteWebView.web.tsx` : simple message pour le web.
-- `src/app/` : écrans (accueil, navigateur, réglages, à propos), Expo Router,
+- `src/components/SitesLayer.tsx` + `src/lib/openSites.tsx` : les réseaux, **par-dessus la pile d'écrans**
+  (plus d'écran `browser/[platform]`). Chaque réseau ouvert reste en vie, caché quand on revient à l'accueil
+  (voir « Fluidité 2 » plus bas). `src/lib/siteColor.ts` : couleur de la zone du haut, envoyée par la page.
+- `src/app/` : écrans (accueil, réglages, à propos), Expo Router,
   sans en-tête natif (chaque écran dessine le sien).
 - Design : `design/OneForAll_Prototype.html` (export de Claude Design, s'ouvre dans un navigateur).
   Reproduit dans `src/lib/theme.ts` (couleurs claires/sombres, courbes), `src/components/ui.tsx`,
@@ -54,8 +57,8 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   Facebook). Envoi à TestFlight à confirmer avec l'utilisateur ; pas encore testé sur iPhone.
 - Invitation de la sœur en cours : groupe de test **externe** + **lien public** TestFlight (revue bêta Apple
   demandée ; textes de « Test Information » fournis). Prochaine étape : activer le lien public et l'envoyer.
-- Branche `claude/beautiful-mayer-mvofmc` : 1 commit non fusionné (« Revoir la présentation » relance le tuto),
-  à regrouper avec les corrections issues des tests du build 4 dans une prochaine PR.
+- Branche `claude/beautiful-mayer-mvofmc` (repartie de `main` après la PR 5) : « Fluidité 2 », poussée, demande de
+  fusion à ouvrir par l'utilisateur, puis **build 6** (un seul build pour PR 5 + Fluidité 2).
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
@@ -133,7 +136,38 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   de règle `feedEnd` (sur `ig.feedReels`) : carte « Tu as tout vu » + « Revenir en haut » quand, après la dernière
   publication visible, il n'y a que des publications masquées (au moins 12). Barre d'onglets : la case du lien Reels
   est masquée aussi (`:has`, règle JSON seule), plus de trou entre Recherche et Messages.
-- Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram, masquer les publicités vidéo.
+- **Fluidité 2** (demande de l'utilisateur avant le build 6 ; pas encore buildé ; testé seulement sur fausses pages
+  Chromium et dans la version web de l'app, où les sites ne sont qu'un message) :
+  - Réseaux **gardés ouverts** : revenir à l'accueil cache le réseau sans le fermer ; rouvrir = instantané, même
+    endroit. Caché : hors écran, opacité 0, sans appuis ni VoiceOver ; la page reçoit `__ONEFORALL_HIDDEN__(true)`
+    (`PAGE_HIDDEN_SCRIPT` : `visibilityState`/`hidden`/`hasFocus` faussés + `visibilitychange`/`blur`, vidéos en
+    pause, toute lecture arrêtée). But supposé : veille du site, pas de « Vu » sur un message arrivé en notre absence.
+    Pas de `display: none` (risque que la vue native soit détruite avec la nouvelle architecture).
+  - Page tuée par iOS (`onContentProcessDidTerminate`) : rechargée (tout de suite si affichée, sinon au retour) ;
+    avant, page blanche. Règles changées : rechargement en arrière-plan quand le réseau est caché.
+  - **Préparation au lancement** du dernier réseau utilisé (`oneforall:last-site:v1`), après l'animation et la mise
+    à jour des règles (≤ 3 s). Réglages → Rapidité, activé par défaut (choix de l'utilisateur).
+  - Bandeau « Reels masqués » à la 1re apparition seulement (choix de l'utilisateur). Temps du jour compté seulement
+    quand le réseau est affiché.
+  - Lancement : 0,4 s au lieu de 2,65 s quand la présentation a déjà été vue (animation complète au 1er lancement).
+    Non fait : écran de démarrage natif sombre en mode sombre (il est beige, `splash-icon.png` est transparent) ;
+    le module de config n'a pas pu être vérifié dans la session.
+  - Script : nettoyage limité aux éléments ajoutés (page entière ≤ 1 fois / 2 s) : 851 → 93 ms de travail pendant
+    3 s de défilement sur une fausse page de 400 publications. Mesures des vidéos dans `requestAnimationFrame`.
+    Redirection après la navigation du site (micro-tâche, avant : pendant). Instagram démarre directement sur
+    `/?variant=following` (adresse de départ déjà redirigée).
+  - Zone du haut de la couleur du site (`theme-color` ou fond de la page, message `theme`, réduit à 3 nombres).
+  - `allowsLinkPreview={false}` (pas d'aperçu Safari à l'appui long) ; `mediaPlaybackRequiresUserAction={false}` :
+    vidéos en lecture auto sans le son, **choix de l'utilisateur** (avant : aucune lecture auto).
+  - **Diagnostic** : compteur de chargements complets + cause du dernier (ouverture, rechargement, lien, redirection
+    OneForAll, redirection au chargement, redirection douce ratée, page fermée par iOS, règles changées).
+    C'est l'outil pour trouver ce qui recharge encore : demander à l'utilisateur ce qu'il affiche.
+  - Déconseillé et non fait : service workers (« App-Bound Domains », 10 domaines max, connexion Google/Facebook
+    en risque), toucher aux cookies partagés ou au cache.
+  - Un test de glissement (`assert.ok`) a échoué une fois juste après un banc d'essai, puis 16 passages réussis :
+    probablement sensible à la charge de la machine, à surveiller.
+- Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
+  à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
   - Sécurité des règles téléchargées : libellés/descriptions sans `< > &` et page bloquée construite sans HTML ;
     CSS sans `\` ni `@` (sauf `@media`), ni `url(`/`image(`/`src(` ; regex sans répétition imbriquée ni
@@ -157,9 +191,11 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 
 ## À faire (par ordre)
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
-   Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité) ;
-   vérifier sur iPhone : défilement fluide, Explore et accueil sans rechargement, connexion YouTube (Google) et
-   Facebook toujours dans l'app, liens externes dans Safari.
+   Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité +
+   Fluidité 2) ; vérifier sur iPhone : réseau retrouvé au même endroit après l'accueil, préparation au lancement,
+   lancement court, zone du haut colorée, défilement fluide, compteur du Diagnostic (Explore et accueil sans
+   rechargement ?), vidéos en pause quand le réseau est caché, batterie et chaleur avec 3 réseaux ouverts,
+   connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
 1. Retours de test du build 5 (utilisateur et sa sœur) : tuto,
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).
