@@ -3,7 +3,7 @@
  *
  * Toutes les règles sont DÉCLARATIVES (des chaînes et des objets simples) :
  * elles vivent dans src/rules/<plateforme>.json et sont injectées dans la page web.
- * Pour modifier un sélecteur quand Instagram/YouTube change son HTML,
+ * Pour modifier un sélecteur quand Instagram/YouTube/Facebook change son HTML,
  * il suffit d'éditer ce fichier JSON — pas besoin de toucher au moteur.
  * (Dans le JSON, `css` peut être une liste de lignes ; elle est jointe au chargement.)
  * Le format est vérifié par src/rules/validate.ts.
@@ -64,7 +64,7 @@ export type Rule = {
 };
 
 export type Platform = {
-  id: 'instagram' | 'youtube';
+  id: 'instagram' | 'youtube' | 'facebook';
   name: string;
   /** Page ouverte quand on appuie sur le bouton. */
   startUrl: string;
@@ -73,7 +73,7 @@ export type Platform = {
   /** Couleur du bouton sur l'accueil. */
   color: string;
   /**
-   * User-agent optionnel. Utile pour YouTube : Google refuse la connexion
+   * User-agent optionnel. Utile pour YouTube et Facebook : Google (et Facebook) refusent la connexion
    * depuis une WebView « reconnue », on se présente donc comme Safari iOS.
    */
   userAgent?: string;

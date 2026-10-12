@@ -2,8 +2,8 @@
 
 **Les réseaux sociaux, sans le contenu fait pour te rendre accro.**
 
-OneForAll est une app iPhone gratuite et open source. Elle ouvre Instagram et YouTube et en
-retire les **Reels, les Shorts et Explore**. Tu gardes ce qui compte : tes messages, les
+OneForAll est une app iPhone gratuite et open source. Elle ouvre Instagram, YouTube et Facebook
+et en retire les **Reels, les Shorts et Explore**. Tu gardes ce qui compte : tes messages, les
 profils, la recherche et la publication. **TikTok est banni** : il ne contient que de la vidéo courte à
 défilement infini, donc l'app refuse d'ouvrir ses liens, d'où qu'ils viennent.
 
@@ -28,14 +28,14 @@ défilement infini, donc l'app refuse d'ouvrir ses liens, d'où qu'ils viennent.
 | ✅ | Garde DMs, profils, recherche, publication. |
 | ✅ | Chaque règle s'active ou se désactive dans **Réglages**. |
 | ✅ | Bloque les liens TikTok (interdiction codée dans l'app, qu'une mise à jour de règles ne peut pas lever). |
-| ⚠️ | **N'est pas affiliée** à Instagram (Meta), YouTube (Google) ni TikTok. |
+| ⚠️ | **N'est pas affiliée** à Instagram, Facebook (Meta), YouTube (Google) ni TikTok. |
 | ⚠️ | Elle affiche leurs sites web en modifiant l'affichage. Cela peut ne pas respecter leurs conditions d'utilisation. Nous n'avons connaissance d'aucune sanction pour cet usage, mais nous ne pouvons pas le garantir. |
 | ⚠️ | Quand un site change son HTML, une règle peut cesser de fonctionner jusqu'à sa mise à jour. |
 | ✅ | Les règles corrigées arrivent **sans réinstaller l'app** (voir ci-dessous). |
 
 ## Mises à jour des règles sans réinstaller
 
-Instagram et YouTube changent souvent leur HTML. Les règles sont donc de simples fichiers
+Instagram, YouTube et Facebook changent souvent leur HTML. Les règles sont donc de simples fichiers
 JSON publics ([`src/rules/`](src/rules)) que l'app télécharge au lancement :
 
 - une correction fusionnée sur `main` atteint tout le monde en quelques minutes ;
