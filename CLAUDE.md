@@ -68,6 +68,11 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   eas submit --platform ios --latest
   ```
 - Les corrections de **règles** (JSON sur `main`) arrivent sans nouveau build.
+- ⚠️ **Les règles de `main` tournent aussi sur les ANCIENNES versions installées.** Vérifié : le build 3 n'a pas
+  l'anti-boucle (`isAlreadyThere`), donc `ig.followingFeed` (`/` → `/?variant=following`) y recharge la page sans fin
+  (page Instagram blanche). Avant d'ajouter une règle, vérifier qu'elle ne casse pas les builds plus anciens.
+- Le 12/10, les captures de l'utilisateur montraient encore le **build 3** (barre du haut, carte TikTok « Bloqué »),
+  et pas le build 4 : le build 4 n'était donc pas installé sur son iPhone (TestFlight à vérifier).
 
 ## Retours de test de l'utilisateur (iPhone)
 - OK : onglet Reels masqué (Instagram), onglet Shorts masqué (YouTube), recherche Instagram sans grille Explore, DMs OK.
