@@ -337,6 +337,9 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
    continuer, sinon elle repartirait de `main` sans ces changements. Pull request quand il le demande, fusion, build. ⚠️ À la fusion, les règles
    JSON partent aussi vers les anciens builds : ils ignorent `cell`, `collapse` et `reload` (trou dans la barre
    d'onglets, Reels encore en display:none donc vide/sauts possibles, Accueil en navigation douce) jusqu'au build.
+   **13/10 (suite)** : ce travail a été repris tel quel sur `claude/loving-hopper-homd8x` (avance rapide, rien
+   de changé). C'est désormais LA branche à récupérer (`git fetch origin claude/loving-hopper-homd8x` puis
+   `git merge origin/claude/loving-hopper-homd8x`) dans une nouvelle session.
    Vérifier ensuite : vide en bas du fil, carte de fin, clavier des messages, chaleur/data en bas du fil.
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
    Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité +
