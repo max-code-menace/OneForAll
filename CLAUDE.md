@@ -280,8 +280,9 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     l'article (Instagram peut compter un Reel, une pub ou une suggestion repliés comme « vus », impressions de pub
     comprises). C'est justement ce qui permet à Instagram de la mesurer (sinon vide et sauts) ; ses enfants, eux,
     ne sont pas vus. Si l'utilisateur refuse ça pour les pubs : retirer `collapse` de ig.ads (le vide reviendrait).
-    Coût mesuré (faux fil) : recalcul de style un peu plus élevé qu'avec display:none (les publications repliées
-    restent dans la page) ; `content-visibility` à la place de `> *` n'aide pas.
+    Coût mesuré (banc, 3 essais en alternance, rapporté à la même page sans script) : style ×1,23 (display:none :
+    ×1,15), mise en page ×0,82 (×0,78). Petit surcoût (les publications repliées restent dans la page ; le banc
+    l'exagère, il ne démonte jamais les publications lointaines). `content-visibility` à la place de `> *` n'aide pas.
   - **Clavier des messages** (captures : le champ de saisie se cachait derrière la barre « ˄ ˅ ✓ » d'iOS en tapant
     ou en effaçant) : `hideKeyboardAccessoryView` (plus de barre). Supposé : fermer le clavier en touchant la
     conversation. Si ça ne suffit pas : redimensionner la WebView avec le clavier (KeyboardAvoidingView autour de
