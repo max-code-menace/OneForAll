@@ -330,8 +330,11 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
 
 ## À faire (par ordre)
 00. Branche `claude/confident-tesla-wid97v` (Fluidité 3 + fil virtualisé + repli des Reels + clavier + relevé +
-   règles de la branche dans l'app de test) : testée par l'utilisateur dans l'app de test, PAS fusionnée. Prochaine
-   étape quand il le demande : pull request vers `main`, fusion, puis build (production). ⚠️ À la fusion, les règles
+   règles de la branche dans l'app de test) : testée par l'utilisateur dans l'app de test, PAS fusionnée.
+   **Choix de l'utilisateur (13/10)** : continuer à tester avec l'app de test, puis UNE grosse pull request à la fin.
+   Donc : une nouvelle session (autre nom de branche) doit d'abord récupérer ce travail
+   (`git fetch origin claude/confident-tesla-wid97v` puis `git merge origin/claude/confident-tesla-wid97v`) avant de
+   continuer, sinon elle repartirait de `main` sans ces changements. Pull request quand il le demande, fusion, build. ⚠️ À la fusion, les règles
    JSON partent aussi vers les anciens builds : ils ignorent `cell`, `collapse` et `reload` (trou dans la barre
    d'onglets, Reels encore en display:none donc vide/sauts possibles, Accueil en navigation douce) jusqu'au build.
    Vérifier ensuite : vide en bas du fil, carte de fin, clavier des messages, chaleur/data en bas du fil.
