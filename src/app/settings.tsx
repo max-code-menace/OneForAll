@@ -161,7 +161,7 @@ export default function SettingsScreen() {
           <Card>
             <SwitchRow
               label="Afficher l'adresse de la page"
-              description="Affiche en haut du site le chemin de la page (sans les paramètres), par exemple /reel/…. Utile pour signaler une règle qui ne marche pas. Rien n'est envoyé."
+              description="Affiche en haut du site le chemin de la page (sans les paramètres), par exemple /reel/…. Utile pour signaler une règle qui ne marche pas. Le bouton « Relevé » prépare un résumé de la forme de la page (tailles et positions, sans texte, sans nom de compte ni lien) que tu peux choisir d'envoyer. Rien n'est envoyé sans toi."
               value={diagnostic}
               onValueChange={setDiagnostic}
             />

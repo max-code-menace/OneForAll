@@ -147,7 +147,9 @@ export const SNAPSHOT_SCRIPT = `
   try {
     var H = window.innerHeight, se = document.scrollingElement || document.documentElement, L = [];
     var KNOWN = { direct: 1, t: 1, p: 1, reel: 1, reels: 1, explore: 1, search: 1, stories: 1, accounts: 1, inbox: 1 };
-    var path = location.pathname.split('/').map(function (x) { return !x || KNOWN[x] ? x : '…'; }).join('/');
+    var path = location.pathname.split('/').map(function (x) {
+      return !x || Object.prototype.hasOwnProperty.call(KNOWN, x) ? x : '…';
+    }).join('/');
     var keys = location.search ? location.search.slice(1).split('&').map(function (x) { return x.split('=')[0]; }) : [];
     var n = function (v) { return Math.round(v); };
     var kind = function (el) {
@@ -457,6 +459,12 @@ const RUNTIME = `
   var hiddenTotal = 0; // publications masquées depuis le chargement (carte de fin)
   function hideEl(el, attr, collapse) {
     el.setAttribute(attr, 'hidden');
+    if (attr === 'data-sans-reels') {
+      // Une vidéo qui jouait déjà (lien du Reel arrivé tard) : coupée tout de suite ; celles qui
+      // démarreraient ensuite le sont par l'écouteur « play ».
+      var vids = el.tagName === 'VIDEO' ? [el] : el.getElementsByTagName('video');
+      for (var v = 0; v < vids.length; v++) { try { vids[v].muted = true; vids[v].pause(); } catch (e) {} }
+    }
     // Replié : géré par la feuille de style (attribut), rien n'est écrit dans son style.
     if (collapse) { el.setAttribute(collapse === 'row' ? 'data-sans-reels-collapse-row' : 'data-sans-reels-collapse', ''); return; }
     if (!el.__sansReelsDisplay) {
@@ -684,7 +692,7 @@ const RUNTIME = `
       return;
     }
     reportPath();
-    if (noUrl ? leaving : checkUrl()) return;
+    if (noUrl || (guardHref !== null && location.href === guardHref) ? leaving : checkUrl()) return;
     themeQueued = true;
     addStyle();
     // Chargement : toute la page, tout de suite. Changement de page : tout ce qui est
@@ -814,13 +822,25 @@ const RUNTIME = `
       // Seulement si l'adresse a changé : un site peut appeler replaceState sans arrêt
       // (pour retenir la position de défilement…) ; tout relire à chaque fois faisait
       // accrocher le défilement.
-      // Le site qui RÉÉCRIT l'adresse du fil (replaceState), par exemple vers celle d'une
-      // publication qui passe à l'écran, ne change pas de page : aucune règle d'adresse ne
-      // s'applique alors (sinon une publication repliée qui passe pourrait renvoyer à l'accueil).
-      if (location.href !== before) afterSite(name === 'replaceState' && fromFeed && location.pathname !== '/');
+      // Le site qui RÉÉCRIT l'adresse du fil (replaceState) avec le lien d'une publication que
+      // nous avons masquée (elle passe à l'écran, repliée) ne change pas de page : les règles
+      // d'adresse ne s'appliquent pas à CETTE adresse (sinon retour à l'accueil, voire
+      // rechargement). Toute autre adresse est vérifiée normalement (pas de trou dans les règles).
+      if (location.href !== before) {
+        var guard = name === 'replaceState' && fromFeed && location.pathname !== '/' && isHiddenPostPath(location.pathname);
+        guardHref = guard ? location.href : null;
+        if (guard) lastHref = location.href; // le filet de sécurité (minuteur) ne la revérifie pas
+        afterSite(guard);
+      }
       return result;
     };
   });
+  var guardHref = null; // adresse réécrite par le site, qu'on laisse telle quelle (voir plus haut)
+  function isHiddenPostPath(path) {
+    var links = document.querySelectorAll('[data-sans-reels="hidden"] a[href]');
+    for (var i = 0; i < links.length; i++) if (links[i].pathname === path) return true;
+    return false;
+  }
   var afterQueued = false, afterNoUrl = true;
   function afterSite(noUrl) {
     afterNoUrl = afterNoUrl && !!noUrl;
@@ -833,7 +853,8 @@ const RUNTIME = `
       run(null, false, skip);
     });
   }
-  window.addEventListener('popstate', function () { run(); });
+  // Retour en arrière : la page affichée peut vraiment être celle de cette adresse, on vérifie.
+  window.addEventListener('popstate', function () { guardHref = null; run(); });
 
   // b) Clic sur un lien interdit ou réécrit : on intercepte avant le site.
   document.addEventListener('click', function (e) {

@@ -11,6 +11,9 @@
   pages masque des éléments, redirige des liens et empêche de glisser vers d'autres Reels. Il lit aussi l'adresse de la page et le nombre de messages
   non lus affiché dans son titre (« (3) Instagram ») ; ces informations restent sur ton téléphone.
   Il est lisible dans `src/lib/buildInjection.ts` et `src/rules/`.
+- En mode Diagnostic (désactivé par défaut), le bouton « Relevé » lit la **forme** de la page affichée
+  (tailles, positions, type de chaque case), sans texte, sans nom de compte et sans lien, et ouvre la
+  feuille de partage d'iOS. Il ne quitte ton téléphone **que si tu choisis toi-même** où l'envoyer.
 
 ## Les connexions que fait l'app elle-même
 Il y en a deux, et aucune ne passe par un serveur à nous : les règles (ci-dessous, activé par

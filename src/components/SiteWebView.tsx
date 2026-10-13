@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { Linking, Pressable, Platform as RNPlatform, Share, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { WebViewNavigationEvent } from 'react-native-webview/lib/WebViewTypes';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
@@ -48,6 +49,7 @@ type Props = {
  */
 export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef, onSiteColor }: Props) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const webRef = useRef<WebView>(null);
   const { isEnabled, diagnostic } = useSettings();
   const { platforms } = useRules();
@@ -350,26 +352,30 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
         )}
       />
       {diagnostic && (
-        <View pointerEvents="box-none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
-          <View pointerEvents="none" style={styles.flex}>
-            <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
-              Page : {path || '…'}
-            </Text>
-            <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
-              Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
-            </Text>
-          </View>
-          {/* Relevé de la FORME de la page (aucun contenu), à partager si l'utilisateur le veut. */}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Relevé de la structure de la page, à partager"
-            hitSlop={8}
-            onPress={askSnapshot}
-            style={({ pressed }) => [styles.snapshot, { borderColor: t.onInverse, opacity: pressed ? 0.6 : 1 }]}
-          >
-            <Text style={{ fontSize: 13, fontWeight: '600', color: t.onInverse }}>Relevé</Text>
-          </Pressable>
+        <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
+          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+            Page : {path || '…'}
+          </Text>
+          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+            Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
+          </Text>
         </View>
+      )}
+      {diagnostic && (
+        // Relevé de la FORME de la page (aucun contenu), à partager si l'utilisateur le veut.
+        // En bas à gauche, en face du bouton rond : loin des icônes des en-têtes des sites (en haut).
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Relevé de la structure de la page, à partager"
+          hitSlop={6}
+          onPress={askSnapshot}
+          style={({ pressed }) => [
+            styles.snapshot,
+            { bottom: insets.bottom + 76, backgroundColor: t.inverse, opacity: pressed ? 0.6 : 0.92 },
+          ]}
+        >
+          <Text style={{ fontSize: 13, fontWeight: '600', color: t.onInverse }}>Relevé</Text>
+        </Pressable>
       )}
       <Toast ref={toast} pillRef={toastRef} />
     </View>
@@ -382,16 +388,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
     opacity: 0.92,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     maxWidth: '92%',
   },
-  snapshot: { minHeight: 32, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, justifyContent: 'center' },
+  snapshot: { position: 'absolute', left: 12, minHeight: 36, paddingHorizontal: 14, borderRadius: 18, justifyContent: 'center' },
   diagnosticText: { fontSize: 12, fontFamily: 'Menlo' },
   error: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   errorTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },

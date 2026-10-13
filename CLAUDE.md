@@ -270,10 +270,18 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     (`[data-sans-reels-collapse]` : height/min/max 0, marges/bordures 0, overflow hidden ; enfants display:none),
     réglée par la feuille de style du moteur (attributs, pas de style écrit). Sa case éventuelle (rowOf) est repliée
     sans cacher son contenu (`data-sans-reels-collapse-row`). CSS de ig.feedReels idem (les anciens builds mettent
-    encore display:none après). Risques pris en compte : vidéo d'une publication masquée/repliée mise en pause et
-    muette (écouteur `play`) ; si Instagram RÉÉCRIT l'adresse du fil (replaceState depuis « / ») vers une
-    publication qui passe, aucune règle d'adresse ne s'applique (sinon retour à l'accueil). Carte : une publication
-    repliée compte comme masquée ; vérification au défilement au plus toutes les 150 ms (avant : chaque image).
+    encore display:none après). Risques pris en compte : vidéo d'une publication masquée/repliée coupée au moment du
+    repli ET à chaque lecture (écouteur `play`) ; si Instagram RÉÉCRIT l'adresse du fil (replaceState depuis « / »)
+    avec le lien d'une publication que nous avons masquée (`isHiddenPostPath`), cette adresse est laissée telle
+    quelle (`guardHref`, tenu aussi par le minuteur de secours et au retour dans l'app ; remis à zéro par popstate) ;
+    toute autre adresse est vérifiée normalement. Carte : une publication repliée compte comme masquée ;
+    vérification au défilement au plus toutes les 150 ms (avant : chaque image).
+    Assumé (relecture adverse) : une boîte de 0 px est « vue à 100 % » par un IntersectionObserver posé sur
+    l'article (Instagram peut compter un Reel, une pub ou une suggestion repliés comme « vus », impressions de pub
+    comprises). C'est justement ce qui permet à Instagram de la mesurer (sinon vide et sauts) ; ses enfants, eux,
+    ne sont pas vus. Si l'utilisateur refuse ça pour les pubs : retirer `collapse` de ig.ads (le vide reviendrait).
+    Coût mesuré (faux fil) : recalcul de style un peu plus élevé qu'avec display:none (les publications repliées
+    restent dans la page) ; `content-visibility` à la place de `> *` n'aide pas.
   - **Clavier des messages** (captures : le champ de saisie se cachait derrière la barre « ˄ ˅ ✓ » d'iOS en tapant
     ou en effaçant) : `hideKeyboardAccessoryView` (plus de barre). Supposé : fermer le clavier en touchant la
     conversation. Si ça ne suffit pas : redimensionner la WebView avec le clavier (KeyboardAvoidingView autour de
@@ -281,8 +289,10 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   - **Bouton « Relevé »** dans le bandeau du mode Diagnostic (`SNAPSHOT_SCRIPT`) : la FORME du fil (ancêtres du 1er
     article avec hauteurs/paddings/style écrit, chaque case de la liste : type reel/photo, hauteur, repliée ou non,
     blocs vides), SANS contenu (chemin réduit aux routes connues, noms de paramètres sans valeurs, aucun texte ni
-    lien ; testé). Ouvre la feuille de partage d'iOS (`Share`), accepté seulement 5 s après l'appui. C'est l'outil
-    pour comprendre le vrai fil si un problème de place revient : demander à l'utilisateur de l'envoyer.
+    lien ; testé, y compris les comptes « constructor »/« __proto__ »). Ouvre la feuille de partage d'iOS (`Share`),
+    accepté seulement 5 s après l'appui. Bouton en bas à gauche (en face du bouton rond), pas dans le bandeau du haut
+    (il captait les touchers des icônes des en-têtes). Mentionné dans les Réglages et PRIVACY.md. C'est l'outil pour
+    comprendre le vrai fil si un problème de place revient : demander à l'utilisateur de l'envoyer.
   - Pistes non faites : supprimer l'espaceur `div:has(> article){padding-bottom:0}` (unleash-focus, ordinateur) ;
     filtrer les données JSON avant React (IG-Clean ; champ « Reel » inconnu) ; compenser le défilement quand une
     publication change de taille au-dessus de l'écran (risque : arrêt de l'élan sur iOS).

@@ -707,6 +707,13 @@ async function browserTests() {
   assert.ok(snap && /^Relevé OneForAll 1 · \/direct\/t\/…\/ \?hl$/m.test(snap.text), `relevé : en-tête sans identifiant (${snap && snap.text.split('\n')[0]})`);
   assert.match(snap.text, /articles montés \d+/, 'relevé : articles comptés');
   assert.match(snap.text, /<replié>/, 'relevé : publications repliées signalées');
+  // Noms de compte qui ressemblent à des propriétés de JavaScript : filtrés aussi.
+  for (const name of ['constructor', '__proto__', 'toString']) {
+    await page.evaluate((n) => history.replaceState(null, '', '/' + n + '/'), name);
+    await page.evaluate(SNAPSHOT_SCRIPT);
+    const t = await page.evaluate(() => window.__snapMsgs[window.__snapMsgs.length - 1].text);
+    assert.equal(t.split('\n')[0], 'Relevé OneForAll 1 · /…/', `relevé : compte « ${name} » masqué`);
+  }
   for (const secret of ['compte_', '/reel/', '/p/', 'photo P', 'reel R', '1351278706338407', 'fr']) {
     if (secret === 'fr') { assert.equal(/hl=fr/.test(snap.text), false, 'relevé : pas de valeur de paramètre'); continue; }
     assert.equal(snap.text.includes(secret), false, `relevé : rien de personnel (${secret})`);
@@ -723,6 +730,43 @@ async function browserTests() {
     /que des Reels masqués/,
     'V4 : carte dans le vide',
   );
+  await page.close();
+
+  // --- Le site RÉÉCRIT l'adresse du fil avec le lien d'une publication repliée qui passe à l'écran ---
+  page = await open('https://www.instagram.com/');
+  await page.evaluate(() => {
+    document.getElementById('main').insertAdjacentHTML('beforeend', '<article id="passing"><a href="/u/">u</a><a href="/u/reel/ABC/">r</a></article>');
+  });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { window.__msgs = []; history.replaceState(null, '', '/u/reel/ABC/'); });
+  await page.waitForTimeout(700); // au-delà du filet de sécurité (minuteur de 500 ms)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); // retour dans l'app
+  await page.waitForTimeout(200);
+  assert.equal(pathOf(page), '/u/reel/ABC/', 'adresse réécrite par le site : laissée telle quelle');
+  assert.equal((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'redirected'), false, 'pas de redirection ni de bandeau');
+  // Retour en arrière vers cette adresse : on revérifie (la page peut vraiment être ce Reel).
+  await page.evaluate(() => window.dispatchEvent(new PopStateEvent('popstate')));
+  await page.waitForTimeout(300);
+  assert.equal(pathOf(page), '/', 'retour en arrière : règles appliquées');
+  // Une autre adresse réécrite depuis le fil (ici /reels/) : vérifiée normalement, pas de trou.
+  await page.evaluate(() => history.replaceState(null, '', '/reels/'));
+  await page.waitForTimeout(300);
+  assert.equal(pathOf(page), '/', 'replaceState vers /reels/ depuis le fil : redirigé');
+  // Une vidéo qui joue déjà quand le lien du Reel arrive : coupée au repli.
+  const cut = await page.evaluate(async () => {
+    const a = document.createElement('article');
+    a.innerHTML = '<a href="/u2/">u2</a>';
+    const v = document.createElement('video');
+    let paused = 0;
+    v.pause = () => paused++;
+    a.appendChild(v);
+    document.getElementById('main').appendChild(a);
+    await new Promise((r) => setTimeout(r, 100));
+    a.insertAdjacentHTML('beforeend', '<a href="/u2/reel/LATE/">r</a>');
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    return { paused, muted: v.muted };
+  });
+  assert.deepEqual(cut, { paused: 1, muted: true }, 'vidéo en cours coupée quand sa publication est repliée');
   await page.close();
 
   // --- Publication RÉUTILISÉE par Instagram (même <article>, autre contenu) ---
