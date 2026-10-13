@@ -106,6 +106,9 @@ function urlTests() {
     'https://example.com/?u=https://www.tiktok.com/',
     'about:blank',
   ]) assert.equal(banned(u), null, `ne devrait pas être banni : ${u}`);
+  // Le script injecté est du JavaScript valide (un retour à la ligne mal échappé dans le
+  // gabarit suffit à tout casser sur le téléphone, sans message).
+  for (const on of [true, false]) new Function(buildInjectedScript(PLATFORMS, () => on));
   console.log('✓ règles d’URL (React Native) et sites bannis');
 }
 
@@ -149,6 +152,9 @@ function validationTests() {
   bad('regex qui peut tourner sans fin (2)', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(?:.*)*x$'));
   bad('référence arrière', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(a)\\1$'));
   bad('silent pas vrai/faux', 'instagram', (r) => (r.rules[0].silent = 'oui'));
+  bad('reload pas vrai/faux', 'instagram', (r) => (r.rules[0].reload = 'oui'));
+  bad('cell pas vrai/faux', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell = 'oui'));
+  assert.equal(base('instagram').rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell, true);
   // Les redirections du dépôt ($1 compris) restent acceptées.
   assert.equal(base('instagram').rules.find((x) => x.id === 'ig.profileReels').urls[0].redirectTo, '/$1/');
   assert.equal(base('instagram').rules.find((x) => x.id === 'ig.followingFeed').silent, true);
@@ -230,8 +236,9 @@ async function browserTests() {
     await page.waitForTimeout(250);
     return page;
   }
+  // Masqué = plus affiché (display:none) ou replié (boîte de hauteur 0, voir le champ collapse).
   const hidden = (page, sel) =>
-    page.$eval(sel, (el) => getComputedStyle(el).display === 'none' || !el.offsetParent);
+    page.$eval(sel, (el) => getComputedStyle(el).display === 'none' || !el.offsetParent || el.getBoundingClientRect().height < 1);
   const pathOf = (page) => new URL(page.url()).pathname + new URL(page.url()).search;
 
   // --- Instagram ---
@@ -245,48 +252,113 @@ async function browserTests() {
   assert.equal(await hidden(page, '#profileReelsTab'), true, 'onglet Reels du profil masqué');
   assert.equal(await page.getAttribute('#explore', 'href'), '/explore/search/', 'Explore -> recherche');
 
-  // Contenu ajouté plus tard (scroll infini) => MutationObserver.
-  await page.evaluate(() => {
-    const a = document.createElement('article');
-    a.id = 'late';
-    a.innerHTML = '<a href="/reel/EEE/">reel</a>';
-    document.getElementById('main').appendChild(a);
-  });
-  await page.waitForTimeout(300);
-  assert.equal(await hidden(page, '#late'), true, 'Reel chargé dynamiquement masqué');
-  // Seul ce qui vient d'apparaître est relu : un texte « Sponsorisé » ajouté DANS une
-  // publication déjà là est vu tout de suite…
+  // Changements de la page (scroll infini, texte ou lien mis à jour) : traités AVANT la
+  // prochaine image affichée, donc jamais visibles, même un instant. On fait le changement,
+  // puis on regarde juste après l'image suivante.
+  const atNextFrame = (p, change, sel) =>
+    p.evaluate(
+      ([change, sel]) => {
+        new Function(change)();
+        return new Promise((done) =>
+          requestAnimationFrame(() => setTimeout(() => {
+            const el = document.querySelector(sel);
+            done(getComputedStyle(el).display === 'none' || el.getBoundingClientRect().height < 1);
+          }, 0)),
+        );
+      },
+      [change, sel],
+    );
+  assert.equal(
+    await atNextFrame(page, `const a = document.createElement('article'); a.id = 'late';
+      a.innerHTML = '<a href="/reel/EEE/">reel</a>'; document.getElementById('main').appendChild(a);`, '#late'),
+    true,
+    'Reel chargé dynamiquement masqué avant la prochaine image',
+  );
+  // Un texte « Sponsorisé » ajouté DANS une publication déjà là…
   await page.evaluate(() => {
     const a = document.createElement('article');
     a.id = 'adLater';
     a.innerHTML = '<span>Martin</span>';
     document.getElementById('main').appendChild(a);
   });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(100);
   assert.equal(await hidden(page, '#adLater'), false, 'publication normale visible');
-  await page.evaluate(() => {
-    const s = document.createElement('span');
-    s.textContent = 'Sponsorisé';
-    document.getElementById('adLater').appendChild(s);
-  });
-  await page.waitForTimeout(300);
-  assert.equal(await hidden(page, '#adLater'), true, 'pub ajoutée dans une publication existante masquée');
-  // …et un texte changé à l'intérieur d'un élément l'est par la relecture complète (≤ 2 s).
+  assert.equal(
+    await atNextFrame(page, `const s = document.createElement('span'); s.textContent = 'Sponsorisé';
+      document.getElementById('adLater').appendChild(s);`, '#adLater'),
+    true,
+    'pub ajoutée dans une publication existante masquée',
+  );
+  // …un texte changé à l'intérieur d'un élément (<b> dans le <span> visé)…
   await page.evaluate(() => {
     const a = document.createElement('article');
     a.id = 'adText';
     a.innerHTML = '<span><b>Spon</b></span>';
+    const b = document.createElement('article');
+    b.id = 'adText2';
+    b.innerHTML = '<span><b>Martin</b></span>';
+    document.getElementById('main').append(a, b);
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await hidden(page, '#adText'), false, 'pas encore une pub');
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#adText b').appendChild(document.createTextNode('sorisé'));`, '#adText'),
+    true,
+    'texte ajouté dans un élément : masqué',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#adText2 b').firstChild.nodeValue = 'Sponsorisé';`, '#adText2'),
+    true,
+    'texte modifié sur place : masqué',
+  );
+  // …et un lien qui change d'adresse (React réutilise l'élément).
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'hrefLater';
+    a.innerHTML = '<a href="/p/ZZZ/">photo</a><a id="exploreLater" href="/p/Q/">x</a>';
     document.getElementById('main').appendChild(a);
   });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => document.querySelector('#adText b').appendChild(document.createTextNode('sorisé')));
-  await page.waitForTimeout(150);
-  for (let i = 0; i < 25 && !(await hidden(page, '#adText')); i++) {
-    // la page continue de changer (fil qui se charge) : la relecture complète finit par passer
-    await page.evaluate(() => document.getElementById('main').appendChild(document.createElement('div')));
-    await page.waitForTimeout(150);
-  }
-  assert.equal(await hidden(page, '#adText'), true, 'texte changé dans un élément : masqué par la relecture complète');
+  await page.waitForTimeout(100);
+  assert.equal(await hidden(page, '#hrefLater'), false, 'photo visible');
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#hrefLater a').setAttribute('href', '/reel/ZZZ/');`, '#hrefLater'),
+    true,
+    'lien devenu un Reel : publication masquée',
+  );
+  await page.evaluate(() => document.getElementById('exploreLater').setAttribute('href', '/explore/'));
+  await page.waitForTimeout(100);
+  assert.equal(await page.getAttribute('#exploreLater', 'href'), '/explore/search/', 'lien devenu Explore : réécrit');
+
+  // Un lien réécrit (Explore → recherche) que le site réutilise ensuite pour une autre adresse :
+  // le toucher mène à sa nouvelle adresse, pas à l'ancienne réécriture.
+  await page.evaluate(() => document.getElementById('main').insertAdjacentHTML('beforeend', '<a id="reuse" href="/explore/">loupe</a>'));
+  await page.waitForTimeout(100);
+  assert.equal(await page.getAttribute('#reuse', 'href'), '/explore/search/', 'lien réécrit');
+  await page.evaluate(() => {
+    const a = document.getElementById('reuse');
+    a.setAttribute('href', '/direct/inbox/');
+    a.addEventListener('click', (e) => { e.preventDefault(); window.__siteNav = a.getAttribute('href'); });
+  });
+  await page.waitForTimeout(100);
+  await page.click('#reuse');
+  await page.waitForTimeout(200);
+  assert.equal(await page.evaluate(() => window.__siteNav), '/direct/inbox/', 'lien réutilisé : le site garde la main');
+
+  // Un site qui appelle replaceState sans changer d'adresse (position de défilement…) :
+  // rien n'est relu. Avant, toute la page était relue à chaque appel (le défilement accrochait).
+  const fullScans = await page.evaluate(async () => {
+    let n = 0;
+    const orig = Document.prototype.querySelectorAll;
+    Document.prototype.querySelectorAll = function (...args) {
+      n++;
+      return orig.apply(this, args);
+    };
+    for (let i = 0; i < 50; i++) history.replaceState({ scroll: i }, '', location.href);
+    await new Promise((r) => setTimeout(r, 100));
+    Document.prototype.querySelectorAll = orig;
+    return n;
+  });
+  assert.equal(fullScans, 0, `replaceState sans changement d'adresse : aucune relecture (${fullScans})`);
 
   // Navigation interne (pushState) vers /reels/ => retour accueil.
   await page.evaluate(() => history.pushState({}, '', '/reels/'));
@@ -392,8 +464,10 @@ async function browserTests() {
     document.body.insertAdjacentHTML('beforeend',
       '<div id="bar" style="display:flex;justify-content:space-around;width:300px">' +
       ['/', '/explore/', '/reels/', '/direct/inbox/', '/martin/'].map((h, i) =>
-        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span></div>').join('') +
-      '</div>');
+        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span>' +
+        (i === 2 ? '<span class="badge">•</span>' : '') + '</div>').join('') +
+      '</div>' +
+      '<div id="mixed"><div id="mixedCell"><a href="/reels/">r</a><a id="other" href="/p/X/">p</a></div></div>');
   });
   await page.waitForTimeout(200);
   assert.equal(await hidden(page, '#slot2'), true, 'case Reels masquée en entier');
@@ -401,6 +475,8 @@ async function browserTests() {
   assert.equal(await hidden(page, '#bar'), false, 'barre visible');
   const widths = await page.$$eval('#bar > .slot', (els) => els.filter((e) => e.offsetParent).map((e) => e.offsetWidth));
   assert.deepEqual(widths, [75, 75, 75, 75], `4 onglets de même largeur, sans trou (${widths})`);
+  assert.equal(await hidden(page, '#mixedCell'), false, 'une case qui contient un autre lien reste');
+  assert.equal(await hidden(page, '#other'), false, 'l’autre lien reste visible');
   await page.close();
 
   // --- Fil plein de Reels : pas d'espace vide, puis « Tu as tout vu » ---
@@ -425,13 +501,325 @@ async function browserTests() {
   });
   assert.equal(await cardShown(), false, 'pas de carte tant qu’on voit encore des photos');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(800);
+  // La suite pourrait être en train de charger : il faut une preuve (2,5 s sans rien de nouveau).
+  assert.equal(await cardShown(), false, 'pas de carte tout de suite (la suite charge peut-être)');
+  await page.waitForTimeout(2200);
   assert.equal(await cardShown(), true, '« Tu as tout vu » après la dernière photo');
   assert.match(await page.textContent('#sans-reels-feed-end'), /Tu as tout vu/);
+  // Seul le bouton reçoit les touchers : le reste de la carte laisse passer vers la page.
+  assert.equal(
+    await page.evaluate(() => {
+      const t = document.querySelector('#sans-reels-feed-end div div').getBoundingClientRect();
+      return !!document.elementFromPoint(t.left + 5, t.top + 5).closest('#sans-reels-feed-end');
+    }),
+    false,
+    'la carte laisse passer les touchers (sauf son bouton)',
+  );
+  // Une fenêtre d'Instagram s'ouvre (menu, partage) : la carte s'efface.
+  await page.evaluate(() => document.body.insertAdjacentHTML('beforeend', '<div role="dialog" id="dlg" style="position:fixed;inset:40% 0 0 0;background:#fff">menu</div>'));
+  await page.waitForTimeout(500);
+  assert.equal(await cardShown(), false, 'pas de carte par-dessus une fenêtre d’Instagram');
+  await page.evaluate(() => document.getElementById('dlg').remove());
+  await page.waitForTimeout(500);
+  assert.equal(await cardShown(), true, 'la carte revient quand la fenêtre se ferme');
   await page.click('#sans-reels-feed-end button');
   await page.waitForTimeout(800);
   assert.equal(await page.evaluate(() => window.scrollY), 0, '« Revenir en haut » remonte');
   assert.equal(await cardShown(), false, 'la carte disparaît en haut du fil');
+  await page.close();
+
+  // --- Fil VIRTUALISÉ (comme Instagram) : un Reel masqué ne doit pas garder sa place ---
+  // Faux fils de scripts/fake-feed.cjs : le site mesure chaque publication dès qu'il l'ajoute
+  // (avant le script) et réserve cette place quand elle sort de l'écran (V1 : espaceurs,
+  // V2 : positions absolues). 3 photos séparées par des séries de Reels (6, 10, puis 30).
+  const { feedPage } = require('./fake-feed.cjs');
+  const withoutFeedCss = PLATFORMS.map((p) =>
+    p.id !== 'instagram' ? p : { ...p, rules: p.rules.map((r) => (r.id === 'ig.feedReels' ? { ...r, css: undefined } : r)) },
+  );
+  async function virtualFeed(platforms, mode, list, delay = 300, settle = true) {
+    const p = await browser.newPage({ viewport: { width: 390, height: 760 } });
+    await p.route('**/*', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: feedPage(mode, list, 'dom', 'late', delay) }));
+    await p.addInitScript(() => {
+      window.__snapMsgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => { const o = JSON.parse(m); if (o.type === 'snapshot') window.__snapMsgs.push(o); } };
+    });
+    await p.addInitScript(buildInjectedScript(platforms, noFollow));
+    await p.goto('https://www.instagram.com/');
+    if (!settle) return p;
+    await p.waitForTimeout(600);
+    // Comme l'utilisateur : descendre jusqu'en bas, plusieurs fois, en laissant charger.
+    for (let i = 0, prev = -1, stable = 0; i < 40 && stable < 2; i++) {
+      await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await p.waitForTimeout(400);
+      const [h, st] = await p.evaluate(() => [document.documentElement.scrollHeight, window.__feed.stats()]);
+      stable = h === prev && st.loaded >= st.total ? stable + 1 : 0;
+      prev = h;
+    }
+    return p;
+  }
+  // Balayage de haut en bas : quelles publications visibles passent à l'écran, et combien
+  // d'écrans sans aucune publication visible (le « vide ») ?
+  async function sweep(p) {
+    const seen = new Set();
+    let empty = 0;
+    for (let y = 0; ; y += 300) {
+      const r = await p.evaluate(async (y) => {
+        window.scrollTo(0, y);
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const H = innerHeight;
+        const on = [...document.getElementsByTagName('article')]
+          .filter((a) => a.getClientRects().length && a.getBoundingClientRect().height >= 1 && a.getAttribute('data-sans-reels') !== 'hidden')
+          .filter((a) => { const b = a.getBoundingClientRect(); return b.bottom > 44 && b.top < H - 50; })
+          .map((a) => a.getAttribute('data-id'));
+        return { on, y: scrollY, max: document.documentElement.scrollHeight - H };
+      }, y);
+      r.on.forEach((id) => seen.add(id));
+      if (!r.on.length) empty++;
+      if (r.y >= r.max - 1) break;
+    }
+    return { seen: [...seen].sort(), empty };
+  }
+  for (const mode of ['V1', 'V2']) {
+    // Témoin : sans le CSS de ig.feedReels, le faux fil reproduit bien le vide de l'iPhone.
+    page = await virtualFeed(withoutFeedCss, mode, 'fin');
+    const witness = await page.evaluate(() => document.documentElement.scrollHeight);
+    assert.ok(witness > 10000, `${mode} témoin : grand vide sans le CSS (${witness} px)`);
+    await page.close();
+    // Avec les règles : le fil s'arrête sous la dernière photo, et les photos qui suivent
+    // une série de Reels apparaissent bien (sans le CSS, elles restaient hors de l'écran en V1).
+    page = await virtualFeed(PLATFORMS, mode, 'mixte');
+    const sw = await sweep(page);
+    assert.deepEqual(sw.seen, ['P0', 'P18', 'P7'], `${mode} : les 3 photos passent à l'écran (${sw.seen})`);
+    assert.ok(sw.empty <= 1, `${mode} : pas de vide dans le fil (${sw.empty} écrans vides)`);
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    assert.ok(h < 3500, `${mode} : la page s'arrête après la dernière photo (${h} px)`);
+    // En bas : la carte de fin (sur un fil virtualisé, l'ancienne condition ne la montrait jamais).
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(3000);
+    assert.match(
+      await page.evaluate(() => { const c = document.getElementById('sans-reels-feed-end'); return c && getComputedStyle(c).display !== 'none' ? c.textContent : ''; }),
+      /Tu as tout vu/,
+      `${mode} : « Tu as tout vu » en bas du fil`,
+    );
+    await page.close();
+  }
+  // Réseau lent (une page du fil met 1,2 à 1,5 s) : la suite contient une photo, la carte ne doit
+  // pas annoncer la fin en attendant. En bas du 1er morceau (qui finit par des Reels), puis en
+  // haut d'un fil dont le 1er morceau n'a que des Reels.
+  async function cardBefore(p, photoId, ms) {
+    return p.evaluate(async ([photoId, ms]) => {
+      const t0 = Date.now();
+      let early = false;
+      while (Date.now() - t0 < ms) {
+        const photo = [...document.getElementsByTagName('article')].some((a) => a.getAttribute('data-id') === photoId && a.getClientRects().length);
+        if (photo) return { early, arrived: true };
+        const c = document.getElementById('sans-reels-feed-end');
+        if (c && getComputedStyle(c).display !== 'none') early = true;
+        window.scrollTo(0, document.documentElement.scrollHeight);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return { early, arrived: false };
+    }, [photoId, ms]);
+  }
+  page = await virtualFeed(PLATFORMS, 'V1', 'mixte', 1200, false);
+  await page.waitForTimeout(700); // 1re page affichée
+  let slow = await cardBefore(page, 'P18', 6000);
+  assert.ok(slow.arrived, 'réseau lent : la photo de la page suivante arrive');
+  assert.equal(slow.early, false, 'réseau lent : pas de « Tu as tout vu » pendant le chargement');
+  await page.close();
+  page = await virtualFeed(PLATFORMS, 'V2', 'debut', 1500, false);
+  slow = await cardBefore(page, 'P14', 6000);
+  assert.ok(slow.arrived, '1er morceau sans photo : les photos arrivent');
+  assert.equal(slow.early, false, '1er morceau sans photo : pas de carte en attendant');
+  await page.close();
+
+  // V5 : Instagram ne mesure une publication que quand il la VOIT (IntersectionObserver), comme le
+  // décrit NoReel. En display:none (version précédente), un Reel n'est jamais vu : grand vide. Replié
+  // en boîte de 0 px (champ collapse), il est vu et mesuré à 0 : plus de vide.
+  const displayNone = PLATFORMS.map((p) =>
+    p.id !== 'instagram' ? p : {
+      ...p,
+      rules: p.rules.map((r) => (r.id !== 'ig.feedReels' ? r : {
+        ...r,
+        css: 'article:has(a[href*="/reel/"]) { display: none !important; }',
+        hide: r.hide.map(({ collapse, ...h }) => h),
+      })),
+    },
+  );
+  page = await virtualFeed(displayNone, 'V5', 'fin');
+  const v5witness = await page.evaluate(() => document.documentElement.scrollHeight);
+  assert.ok(v5witness > 10000, `V5 témoin : grand vide avec display:none (${v5witness} px)`);
+  await page.close();
+  page = await virtualFeed(PLATFORMS, 'V5', 'mixte');
+  const v5 = await sweep(page);
+  assert.deepEqual(v5.seen, ['P0', 'P18', 'P7'], `V5 : les 3 photos passent à l'écran (${v5.seen})`);
+  assert.ok(v5.empty <= 1, `V5 : pas de vide avec les Reels repliés (${v5.empty} écrans vides)`);
+  const v5h = await page.evaluate(() => document.documentElement.scrollHeight);
+  assert.ok(v5h < 3500, `V5 : la page s'arrête après la dernière photo (${v5h} px)`);
+  // Un Reel replié garde une boîte (mesurable) de hauteur 0, sans contenu affiché.
+  const box = await page.evaluate(() => {
+    const a = [...document.getElementsByTagName('article')].find((x) => x.getAttribute('data-sans-reels') === 'hidden');
+    return a && { rects: a.getClientRects().length, h: a.getBoundingClientRect().height, child: getComputedStyle(a.firstElementChild).display };
+  });
+  assert.deepEqual(box, { rects: 1, h: 0, child: 'none' }, `Reel replié : boîte de 0 px (${JSON.stringify(box)})`);
+  await page.close();
+
+  // Sauts du contenu pendant le défilement (vidéo de l'utilisateur, 13/10 : la page sautait d'une
+  // publication) : on descend puis remonte par pas de 60 px en suivant une photo à l'écran ; elle doit
+  // bouger exactement comme le défilement.
+  async function jumps(platforms) {
+    const p = await virtualFeed(platforms, 'V5', 'mixte', 300, false);
+    await p.waitForTimeout(700);
+    const n = await p.evaluate(async () => {
+      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const vis = () => [...document.getElementsByTagName('article')].filter((a) => a.getBoundingClientRect().height >= 1 && a.getAttribute('data-sans-reels') !== 'hidden');
+      let count = 0;
+      for (const dir of [1, -1]) {
+        for (let i = 0; i < 120; i++) {
+          const ref = vis()[0], y0 = scrollY, t0 = ref && ref.getBoundingClientRect().top;
+          window.scrollBy(0, 60 * dir);
+          await frame();
+          await new Promise((r) => setTimeout(r, 30));
+          await frame();
+          if (ref && ref.isConnected && vis().includes(ref) && Math.abs(t0 - ref.getBoundingClientRect().top - (scrollY - y0)) > 20) count++;
+          if (dir > 0 && i > 20 && scrollY + innerHeight >= document.documentElement.scrollHeight - 2) break;
+          if (dir < 0 && scrollY <= 0) break;
+        }
+      }
+      return count;
+    });
+    await p.close();
+    return n;
+  }
+  assert.ok((await jumps(displayNone)) > 0, 'V5 témoin : le contenu saute avec display:none');
+  assert.equal(await jumps(PLATFORMS), 0, 'V5 : aucun saut du contenu avec les Reels repliés');
+
+  // Relevé du mode diagnostic : la forme du fil, SANS contenu (ni nom de compte, ni texte, ni lien).
+  const { SNAPSHOT_SCRIPT } = require('../src/lib/buildInjection.ts');
+  page = await virtualFeed(PLATFORMS, 'V5', 'mixte');
+  await page.evaluate(() => history.replaceState(null, '', '/direct/t/1351278706338407/?hl=fr'));
+  await page.evaluate(SNAPSHOT_SCRIPT);
+  const snap = await page.evaluate(() => {
+    const m = (window.__snapMsgs || []);
+    return m[m.length - 1];
+  });
+  assert.ok(snap && /^Relevé OneForAll 1 · \/direct\/t\/…\/ \?hl$/m.test(snap.text), `relevé : en-tête sans identifiant (${snap && snap.text.split('\n')[0]})`);
+  assert.match(snap.text, /articles montés \d+/, 'relevé : articles comptés');
+  assert.match(snap.text, /<replié>/, 'relevé : publications repliées signalées');
+  // Noms de compte qui ressemblent à des propriétés de JavaScript : filtrés aussi.
+  for (const name of ['constructor', '__proto__', 'toString']) {
+    await page.evaluate((n) => history.replaceState(null, '', '/' + n + '/'), name);
+    await page.evaluate(SNAPSHOT_SCRIPT);
+    const t = await page.evaluate(() => window.__snapMsgs[window.__snapMsgs.length - 1].text);
+    assert.equal(t.split('\n')[0], 'Relevé OneForAll 1 · /…/', `relevé : compte « ${name} » masqué`);
+  }
+  for (const secret of ['compte_', '/reel/', '/p/', 'photo P', 'reel R', '1351278706338407', 'fr']) {
+    if (secret === 'fr') { assert.equal(/hl=fr/.test(snap.text), false, 'relevé : pas de valeur de paramètre'); continue; }
+    assert.equal(snap.text.includes(secret), false, `relevé : rien de personnel (${secret})`);
+  }
+  await page.close();
+
+  // Si Instagram gardait quand même une place (hauteurs tirées de ses données, V4) : au milieu
+  // du vide, une carte le dit, avec « Revenir en haut ».
+  page = await virtualFeed(PLATFORMS, 'V4', 'fin');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+  await page.waitForTimeout(800);
+  assert.match(
+    await page.evaluate(() => { const c = document.getElementById('sans-reels-feed-end'); return c && getComputedStyle(c).display !== 'none' ? c.textContent : ''; }),
+    /que des Reels masqués/,
+    'V4 : carte dans le vide',
+  );
+  await page.close();
+
+  // --- Le site RÉÉCRIT l'adresse du fil avec le lien d'une publication repliée qui passe à l'écran ---
+  page = await open('https://www.instagram.com/');
+  await page.evaluate(() => {
+    document.getElementById('main').insertAdjacentHTML('beforeend', '<article id="passing"><a href="/u/">u</a><a href="/u/reel/ABC/">r</a></article>');
+  });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => { window.__msgs = []; history.replaceState(null, '', '/u/reel/ABC/'); });
+  await page.waitForTimeout(700); // au-delà du filet de sécurité (minuteur de 500 ms)
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange'))); // retour dans l'app
+  await page.waitForTimeout(200);
+  assert.equal(pathOf(page), '/u/reel/ABC/', 'adresse réécrite par le site : laissée telle quelle');
+  assert.equal((await page.evaluate(() => window.__msgs)).some((m) => m.type === 'redirected'), false, 'pas de redirection ni de bandeau');
+  // Retour en arrière vers cette adresse : on revérifie (la page peut vraiment être ce Reel).
+  await page.evaluate(() => window.dispatchEvent(new PopStateEvent('popstate')));
+  await page.waitForTimeout(300);
+  assert.equal(pathOf(page), '/', 'retour en arrière : règles appliquées');
+  // Une autre adresse réécrite depuis le fil (ici /reels/) : vérifiée normalement, pas de trou.
+  await page.evaluate(() => history.replaceState(null, '', '/reels/'));
+  await page.waitForTimeout(300);
+  assert.equal(pathOf(page), '/', 'replaceState vers /reels/ depuis le fil : redirigé');
+  // Une vidéo qui joue déjà quand le lien du Reel arrive : coupée au repli.
+  const cut = await page.evaluate(async () => {
+    const a = document.createElement('article');
+    a.innerHTML = '<a href="/u2/">u2</a>';
+    const v = document.createElement('video');
+    let paused = 0;
+    v.pause = () => paused++;
+    a.appendChild(v);
+    document.getElementById('main').appendChild(a);
+    await new Promise((r) => setTimeout(r, 100));
+    a.insertAdjacentHTML('beforeend', '<a href="/u2/reel/LATE/">r</a>');
+    await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+    return { paused, muted: v.muted };
+  });
+  assert.deepEqual(cut, { paused: 1, muted: true }, 'vidéo en cours coupée quand sa publication est repliée');
+  await page.close();
+
+  // --- Publication RÉUTILISÉE par Instagram (même <article>, autre contenu) ---
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<article id="recy"><a href="/u/">u</a><a href="/reel/R1/">reel</a></article>' +
+      '<article id="recyAd"><a href="/u2/">u2</a><span>Sponsorisé</span></article>');
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await hidden(page, '#recy'), true, 'Reel masqué');
+  assert.equal(await hidden(page, '#recyAd'), true, 'pub masquée');
+  // Vidée avant d'être remplie : pas encore une photo, elle reste masquée (pas de clignotement).
+  assert.equal(await atNextFrame(page, `document.getElementById('recy').innerHTML = '';`, '#recy'), true, 'case vidée : reste masquée');
+  assert.equal(
+    await atNextFrame(page, `document.getElementById('recy').innerHTML = '<a href="/u/">u</a><a href="/p/P9/">photo</a>';`, '#recy'),
+    false,
+    'case devenue une photo : réaffichée',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.getElementById('recy').innerHTML = '<a href="/u/">u</a><a href="/reel/R2/">reel</a>';`, '#recy'),
+    true,
+    'redevenue un Reel : masquée de nouveau',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#recyAd span').firstChild.nodeValue = 'Paris';`, '#recyAd'),
+    false,
+    'pub devenue une publication normale : réaffichée',
+  );
+  await page.close();
+  // Grille d'un profil : la vignette (le lien lui-même) passe d'un Reel à une photo.
+  page = await open('https://www.instagram.com/martin/');
+  await page.evaluate(() => {
+    document.getElementById('main').insertAdjacentHTML('beforeend', '<a id="g1" href="/reel/R1/"><img alt=""></a>');
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await hidden(page, '#g1'), true, 'vignette de Reel masquée');
+  assert.equal(await atNextFrame(page, `document.getElementById('g1').setAttribute('href', '/p/P1/');`, '#g1'), false, 'vignette devenue une photo : réaffichée');
+  await page.close();
+  // Case qui reçoit un NOUVEL article (photo) à la place du Reel masqué ; le style d'origine revient.
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<div id="rowR" style="display:flex"><div id="cellR"><article id="artR" style="display:flex"><a href="/reel/R5/">r</a></article></div></div>');
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await hidden(page, '#rowR'), true, 'case du Reel masquée');
+  assert.equal(
+    await atNextFrame(page, `document.getElementById('cellR').innerHTML = '<article id="artP"><a href="/u/">u</a><a href="/p/P5/">p</a></article>';`, '#rowR'),
+    false,
+    'nouvel article photo dans la case : case réaffichée',
+  );
+  assert.equal(await page.$eval('#rowR', (el) => el.style.display), 'flex', 'la case retrouve son display d’origine');
   await page.close();
 
   // Règles désactivées => rien n'est masqué.
@@ -507,6 +895,16 @@ async function browserTests() {
   await page.evaluate(() => document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '60vh')));
   await swipe(page, 200, 500, 100);
   assert.ok((await scrollTop(page, '#viewer')) > 0, 'le fil avec des vidéos normales défile');
+  // Petit écran (iPhone SE) : une vidéo 4:5 du fil y dépasse 75 % de la hauteur, mais ce
+  // n'est pas un Reel (pas en format portrait 9:16) : le fil défile toujours.
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.evaluate(() => {
+    document.getElementById('viewer').scrollTop = 0;
+    document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '400px'));
+  });
+  await page.waitForTimeout(600);
+  await swipe(page, 160, 250, 20); // au-dessus du panneau de commentaires (en bas)
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'petit écran : une vidéo 4:5 ne bloque pas le défilement');
   await page.close();
 
   // Stories (plein écran aussi) : on peut toujours glisser vers le bas pour les fermer.
@@ -551,11 +949,30 @@ async function browserTests() {
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/explore/search/', 'Explore -> recherche');
   assert.equal(spa.loads(), 1, 'Explore -> recherche sans recharger la page');
+  const before = await spa.p.evaluate(() => history.length);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(300);
+  assert.equal(await spa.p.evaluate(() => history.length), before, 'déjà sur la recherche : la page n’est pas empilée');
+  assert.equal(pathOf(spa.p), '/explore/search/', 'toujours sur la recherche');
+  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
+  // Accueil -> fil Abonnements : un VRAI chargement, directement à la bonne adresse (sur le vrai
+  // Instagram, la navigation douce changeait l'adresse mais le fil restait « Pour vous »).
   await spa.p.click('#homeLink');
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
-  assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
-  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
+  assert.equal(spa.loads(), 2, 'fil Abonnements : un seul chargement de page');
+  assert.deepEqual(spa.sent.filter((m) => m.type === 'reloading'), [{ type: 'reloading', why: 'rule' }], 'rechargement voulu, signalé');
+  // Déjà sur le fil Abonnements : Accueil remonte en haut, sans recharger.
+  await spa.p.click('#homeLink');
+  await spa.p.waitForTimeout(500);
+  assert.equal(spa.loads(), 2, 'Accueil sur le fil Abonnements : pas de rechargement');
+  // C'est le site qui revient lui-même au fil (ex. après « Partager ») : jamais de rechargement,
+  // il pourrait être en train d'envoyer quelque chose.
+  await spa.p.evaluate(() => history.pushState({}, '', '/p/BBB/'));
+  await spa.p.evaluate(() => history.pushState({}, '', '/'));
+  await spa.p.waitForTimeout(1000);
+  assert.equal(pathOf(spa.p), '/?variant=following', 'retour au fil par le site : bonne adresse');
+  assert.equal(spa.loads(), 2, 'retour au fil par le site : pas de rechargement');
   await spa.p.close();
   // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
   spa = await openSpa(false);

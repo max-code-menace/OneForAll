@@ -32,7 +32,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
-    "test:inject": "node scripts/test-injection.cjs"
+    "test:inject": "node scripts/test-injection.cjs",
+    "bench:inject": "node scripts/bench-injection.cjs"
   },
   "private": true,
   "license": "MPL-2.0"

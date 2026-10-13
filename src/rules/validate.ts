@@ -140,6 +140,14 @@ function sanitizeHide(raw: unknown, where: string): HideRule {
   const textMatch = optionalText(raw.text, `${where}.text`, 100);
   if (closest) rule.closest = closest;
   if (textMatch) rule.text = textMatch;
+  if (raw.cell !== undefined) {
+    if (typeof raw.cell !== 'boolean') fail(`${where}.cell`, 'vrai/faux attendu');
+    if (raw.cell) rule.cell = true;
+  }
+  if (raw.collapse !== undefined) {
+    if (typeof raw.collapse !== 'boolean') fail(`${where}.collapse`, 'vrai/faux attendu');
+    if (raw.collapse) rule.collapse = true;
+  }
   return rule;
 }
 
@@ -190,6 +198,10 @@ function sanitizeRule(raw: unknown, index: number): Rule {
   if (raw.silent !== undefined) {
     if (typeof raw.silent !== 'boolean') fail(`${name}.silent`, 'vrai/faux attendu');
     if (raw.silent) rule.silent = true;
+  }
+  if (raw.reload !== undefined) {
+    if (typeof raw.reload !== 'boolean') fail(`${name}.reload`, 'vrai/faux attendu');
+    if (raw.reload) rule.reload = true;
   }
   if (raw.feedEnd !== undefined) {
     if (typeof raw.feedEnd !== 'boolean') fail(`${name}.feedEnd`, 'vrai/faux attendu');

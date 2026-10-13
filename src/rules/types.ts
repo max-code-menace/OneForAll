@@ -23,6 +23,20 @@ export type HideRule = {
    * (insensible à la casse, espaces ignorés). Ex: 'Shorts'.
    */
   text?: string;
+  /**
+   * Optionnel : masquer aussi la case qui contient l'élément (jusqu'à 3 niveaux de
+   * div/span/li, tant qu'elle ne contient aucun autre lien). Ex. la case de l'onglet
+   * Reels dans la barre du bas, pour ne pas laisser de trou entre les onglets.
+   * Ignoré sans risque par les anciennes versions de l'app.
+   */
+  cell?: boolean;
+  /**
+   * Optionnel : au lieu de faire disparaître l'élément (display:none), le replier en une boîte
+   * de hauteur 0 sans contenu. Pour un fil VIRTUALISÉ (Instagram) : un élément en display:none
+   * n'est plus « vu » par le site, qui garde pour lui une place estimée (vide, sauts du contenu).
+   * Ignoré sans risque par les anciennes versions de l'app (elles font display:none).
+   */
+  collapse?: boolean;
 };
 
 /** Réécrire la destination d'un lien (ex: Explore -> page de recherche). */
@@ -63,6 +77,14 @@ export type Rule = {
   urls?: UrlRule[];
   /** Redirection sans bandeau (ex. fil « Abonnements » : à chaque retour à l'accueil). */
   silent?: boolean;
+  /**
+   * Quand on TOUCHE un lien visé par cette règle (ou réécrit par elle) : vrai chargement de la
+   * page, pas une navigation douce. Pour un site qui change bien d'adresse mais pas de contenu
+   * (Instagram : « ?variant=following » affichait encore « Pour vous »). Quand c'est le site qui
+   * change de page tout seul, toujours la navigation douce (un rechargement couperait un envoi).
+   * Ignoré sans risque par les anciennes versions (elles font une navigation douce).
+   */
+  reload?: boolean;
   /**
    * Empêche de glisser verticalement d'une vidéo plein écran à la suivante
    * (Reel ouvert depuis un message : on le voit, mais pas les suivants).

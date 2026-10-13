@@ -9,6 +9,7 @@ import { isNotificationsEnabled, setNotificationsEnabled } from '../lib/backgrou
 import { useIntro } from '../lib/intro';
 import { useRules, type RulesStatus } from '../lib/rules';
 import { useSettings } from '../lib/settings';
+import { IS_TEST_APP } from '../lib/testUpdates';
 import { isBadgeEnabled, setBadgeEnabled } from '../lib/unread';
 import { EASE, useReduceMotion, useTheme, type Theme } from '../lib/theme';
 
@@ -190,7 +191,7 @@ export default function SettingsScreen() {
           <Card>
             <SwitchRow
               label="Afficher l'adresse de la page"
-              description="Affiche en haut du site le chemin de la page (sans les paramètres), par exemple /reel/…. Utile pour signaler une règle qui ne marche pas. Rien n'est envoyé."
+              description="Affiche en haut du site le chemin de la page (sans les paramètres), par exemple /reel/…. Utile pour signaler une règle qui ne marche pas. Le bouton « Relevé » prépare un résumé de la forme de la page (tailles et positions, sans texte, sans nom de compte ni lien) que tu peux choisir d'envoyer. Rien n'est envoyé sans toi."
               value={diagnostic}
               onValueChange={setDiagnostic}
             />
@@ -259,7 +260,7 @@ function StatusLine({ status, t }: { status: RulesStatus; t: Theme }) {
 function statusText(status: RulesStatus): string {
   switch (status.state) {
     case 'bundled':
-      return "Règles intégrées à l'app.";
+      return IS_TEST_APP ? 'App de test : règles de cette version de test (pas celles de GitHub).' : "Règles intégrées à l'app.";
     case 'checking':
       return 'Vérification en cours…';
     case 'updated':
