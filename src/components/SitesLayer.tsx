@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Animated, BackHandler, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { Animated, BackHandler, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useIntro } from '../lib/intro';
@@ -9,10 +9,10 @@ import { useRules } from '../lib/rules';
 import type { SiteColor } from '../lib/siteColor';
 import { useSettings } from '../lib/settings';
 import { SITE_TEXT } from '../lib/sites';
-import { cardShadow, PUSH, useReduceMotion, useTheme } from '../lib/theme';
+import { PUSH, useReduceMotion, useTheme } from '../lib/theme';
 import { useUsageTimer } from '../lib/usage';
 import type { Platform } from '../rules';
-import { Mark } from './Mark';
+import { HomeButton } from './HomeButton';
 import { SiteWebView } from './SiteWebView';
 import { TourMarker, useTour, type TourStep } from './Tour';
 
@@ -29,10 +29,10 @@ const TOUR: TourStep[] = [
   {
     target: 'home-btn',
     title: 'Revenir à OneForAll',
-    text: 'Touche le symbole pour retrouver l’accueil de OneForAll. Le réseau reste ouvert : tu le retrouveras là où tu l’as laissé.',
+    text: 'Touche le symbole pour retrouver l’accueil de OneForAll : le réseau reste ouvert, là où tu l’as laissé. Fais-le glisser pour le mettre où tu veux.',
     fx: 0.5,
     fy: 0.5,
-    r: 26,
+    r: 28,
   },
   { target: 'pull', title: 'Recharger la page', text: 'Tire la page vers le bas, puis lâche.', fx: 0.5, fy: 0.15, r: 28, go: [0, 90] },
 ];
@@ -127,7 +127,7 @@ export function SitesLayer() {
 
 /**
  * Un réseau, en plein écran (pas de barre) :
- * - le bouton rond (le symbole) = retour à l'accueil de OneForAll ;
+ * - le bouton rond (le symbole) = retour à l'accueil de OneForAll, déplaçable (HomeButton) ;
  * - tirer la page vers le bas = recharger.
  */
 function SiteScreen({ platform, visible, onHome }: { platform: Platform; visible: boolean; onHome: () => void }) {
@@ -154,20 +154,7 @@ function SiteScreen({ platform, visible, onHome }: { platform: Platform; visible
       {/* Repères du tuto : zones des gestes. */}
       <TourMarker markerRef={tour.target('pull')} style={{ left: 16, right: 16, top: insets.top + 8, height: 120 }} />
 
-      <Pressable
-        ref={tour.target('home-btn')}
-        accessibilityRole="button"
-        accessibilityLabel="Retour à OneForAll"
-        hitSlop={6}
-        onPress={onHome}
-        style={({ pressed }) => [
-          styles.home,
-          { bottom: insets.bottom + 72, backgroundColor: t.surface, opacity: pressed ? 0.6 : 0.92 },
-          cardShadow(t),
-        ]}
-      >
-        <Mark size={22} />
-      </Pressable>
+      <HomeButton onHome={onHome} markerRef={tour.target('home-btn')} />
       {tour.element}
     </View>
   );
@@ -178,15 +165,3 @@ function UsageTimer({ id }: { id: string }) {
   useUsageTimer(id);
   return null;
 }
-
-const styles = StyleSheet.create({
-  home: {
-    position: 'absolute',
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});

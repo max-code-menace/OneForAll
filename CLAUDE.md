@@ -180,6 +180,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     en risque), toucher aux cookies partagés ou au cache.
   - Un test de glissement (`assert.ok`) a échoué une fois juste après un banc d'essai, puis 16 passages réussis :
     probablement sensible à la charge de la machine, à surveiller.
+- **Bouton rond déplaçable + vibrations** (demande de l'utilisateur, 13/10, pas encore buildé) :
+  `src/components/HomeButton.tsx`. Toucher = accueil (vibration légère dès que le doigt se pose, le bouton
+  rétrécit) ; glisser (> 10 pt) = le déplacer n'importe où, collé au bord gauche/droit s'il en est à < 36 pt.
+  Place gardée en fractions (`oneforall:home-pos:v1`), la même pour tous les réseaux. Réglages → Bouton de
+  retour : « Vibrations » (activées par défaut) et « Remettre le bouton en bas à droite ». Nouveau module natif
+  `expo-haptics` → `TEST_RUNTIME` passé à `test-2` (app de test à refaire). Vérifié seulement dans la version web
+  (Chromium : glisser, aimant, appui) ; vibrations non vérifiables hors iPhone.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
   à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :

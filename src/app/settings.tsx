@@ -27,7 +27,19 @@ const TOUR: TourStep[] = [
 export default function SettingsScreen() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
-  const { isEnabled, setEnabled, resetAll, diagnostic, setDiagnostic, preload, setPreload } = useSettings();
+  const {
+    isEnabled,
+    setEnabled,
+    resetAll,
+    diagnostic,
+    setDiagnostic,
+    preload,
+    setPreload,
+    homePos,
+    setHomePos,
+    haptics,
+    setHaptics,
+  } = useSettings();
   const { platforms, autoUpdate, setAutoUpdate, status, refresh } = useRules();
   const { showOnboarding } = useIntro();
   const [notifications, setNotifications] = useState(false);
@@ -104,6 +116,24 @@ export default function SettingsScreen() {
               value={preload}
               onValueChange={setPreload}
             />
+          </Card>
+        </View>
+
+        <View style={styles.section}>
+          <SectionTitle>Bouton de retour</SectionTitle>
+          <Card>
+            <SwitchRow
+              label="Vibrations"
+              description="Une petite vibration quand tu touches le bouton rond, et quand tu le déplaces."
+              value={haptics}
+              onValueChange={setHaptics}
+            />
+            {homePos ? (
+              <>
+                <Separator />
+                <LinkRow label="Remettre le bouton en bas à droite" onPress={() => setHomePos(null)} />
+              </>
+            ) : null}
           </Card>
         </View>
 

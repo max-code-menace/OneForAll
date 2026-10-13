@@ -17,7 +17,7 @@
  * natif absent de l'app installée, et la faire planter.
  * (L'empreinte automatique « fingerprint » faisait échouer le build chez Expo : abandonnée.)
  */
-const TEST_RUNTIME = 'test-1';
+const TEST_RUNTIME = 'test-2';
 
 module.exports = ({ config }) => {
   const test = process.env.APP_VARIANT === 'test';
