@@ -14,13 +14,13 @@ export const IS_TEST_APP = Constants.expoConfig?.extra?.variant === 'test';
 
 const MIN_GAP_MS = 20_000;
 
-/** « Version de test du 12/10 à 21:34 » (date d'envoi de la mise à jour en cours). */
+/** « ✓ Mise à jour reçue : version de test du 12/10 à 21:34 » (date d'envoi de la mise à jour en cours). */
 export function testVersionLabel(): string | null {
   if (!IS_TEST_APP) return null;
   const d = Updates.isEmbeddedLaunch ? null : Updates.createdAt;
   if (!d) return 'Version de test (installée)';
   const p = (n: number) => String(n).padStart(2, '0');
-  return `Version de test du ${p(d.getDate())}/${p(d.getMonth() + 1)} à ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `✓ Mise à jour reçue : version de test du ${p(d.getDate())}/${p(d.getMonth() + 1)} à ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 export function useTestUpdates() {
