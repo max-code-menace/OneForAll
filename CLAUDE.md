@@ -19,6 +19,7 @@ ses amis (via TestFlight), puis tout le monde.
   `INSIDE_HOSTS` (`src/lib/sites.ts`, en dur aussi) : domaines de connexion gardés dans l'app ; tout autre
   site (hors réseaux) s'ouvre dans Safari.
 - `src/lib/buildInjection.ts` : script injecté dans les pages (CSS, MutationObserver, redirections, signalement du chemin).
+  Fonctionnement « Fluidité 3 » plus bas (traitement avant chaque image, pas de relecture inutile).
 - `src/lib/rules.tsx` : fournisseur des règles (intégrées + téléchargées + cache + désactivable dans Réglages).
 - `src/lib/settings.tsx` : interrupteurs par règle, mode diagnostic. `src/lib/urlRules.ts` : règles d'URL.
 - `src/components/SiteWebView.tsx` : la WebView (iOS). `SiteWebView.web.tsx` : simple message pour le web.
@@ -42,6 +43,7 @@ ses amis (via TestFlight), puis tout le monde.
 npm install
 npm run typecheck
 npm run test:inject    # nécessite Playwright (Chromium) ; teste le moteur sur de fausses pages
+npm run bench:inject   # fluidité du script sur un faux fil Instagram (avec / sans script, CPU ÷4)
 ```
 Les sélecteurs n'ont **jamais été vérifiés par Claude sur le vrai Instagram/YouTube** (accès réseau et
 connexion impossibles dans la session). Seuls les essais de l'utilisateur sur son iPhone font foi.
@@ -180,6 +182,33 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     en risque), toucher aux cookies partagés ou au cache.
   - Un test de glissement (`assert.ok`) a échoué une fois juste après un banc d'essai, puis 16 passages réussis :
     probablement sensible à la charge de la machine, à surveiller.
+- **Fluidité 3 : Instagram « sans accrochage »** (demande de l'utilisateur, 13/10 ; pas encore buildé ; mesuré
+  seulement sur un faux fil dans Chromium, `npm run bench:inject`, jamais sur le vrai Instagram ni sur iPhone) :
+  - **Élan du défilement** : `decelerationRate="normal"` sur la WebView. Trouvé dans react-native-webview 13.16.1 :
+    avec la nouvelle architecture (RNCWebView.mm), la valeur par défaut reste 0 et `scrollViewWillBeginDragging`
+    l'applique à chaque début de glissement (l'ancienne architecture mettait « normal »). Effet réel sur iPhone NON
+    vérifié (supposé : la page s'arrête net quand on lâche le doigt). Piste n°1 si l'utilisateur dit que ça accroche.
+  - Changements de la page traités **juste avant l'image suivante** (requestAnimationFrame, minuteur de secours
+    250 ms) au lieu de 120 ms après : un Reel ou une pub du fil ne s'affiche plus du tout (faux fil : 156 → ~5
+    images « flash »). Une seule fonction par image (`onFrame`) : d'abord masquer, puis mesurer (vidéos, fin du fil,
+    couleur), mesures ≤ 4/s.
+  - L'observateur suit aussi les textes (`characterData`) et les `href` changés : plus de relecture complète toutes
+    les 2 s. Relecture complète seulement au chargement (`deep`) ; à un changement de page, contrôle 1,5 s plus tard
+    qui saute les éléments déjà examinés (`__sansReelsSeen`). Changement de page : 36–60 → 4–8 ms (CPU ÷4).
+  - `pushState`/`replaceState` **sans changement d'adresse** ignorés (un site qui retient la position de défilement
+    faisait tout relire à chaque appel : 3 267 → 48 ms de script sur le faux fil, tâches de 74 ms supprimées).
+    Instagram le fait-il ? Non vérifié.
+  - Barre d'onglets : les 3 sélecteurs CSS `:has()` (case du Reels) remplacés par le champ de règle `cell`
+    (`cellOf` : remonte ≤ 3 niveaux div/span/li tant qu’il n’y a pas d’autre lien) : surcoût de recalcul de style
+    ≈ +60 % → +15 à 30 %.
+    ⚠️ Les builds ≤ 6 ignorent `cell` : le trou entre Recherche et Messages y revient (affichage seulement).
+  - Vidéo « plein écran » (blocage du glissement) : format portrait exigé (hauteur ≥ 1,3 × largeur), sinon une
+    vidéo 4:5 du fil bloquait le défilement sur un petit écran (iPhone SE). Mesure aussi au démarrage d'une vidéo
+    (`play`) et 1 fois/s s'il y a des vidéos.
+  - Loupe touchée alors qu'on est déjà sur la recherche : remonte en haut au lieu d'empiler la page (2 retours).
+  - Corrigé en passant : la regex « fond transparent » de `reportTheme` était cassée (barres obliques du gabarit).
+  - Non fait (incertain sans le vrai site) : réécrire le lien Accueil vers `/?variant=following` (éviterait un
+    double chargement du fil, mais dépend de la réaction du routeur d'Instagram à un popstate « poussé »).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
   à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
@@ -210,6 +239,8 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
    lancement court, zone du haut colorée, défilement fluide, compteur du Diagnostic (Explore et accueil sans
    rechargement ?), vidéos en pause quand le réseau est caché, batterie et chaleur avec 3 réseaux ouverts,
    connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
+   Avec Fluidité 3 (même build, ou app de test) : élan du défilement d'Instagram (la page continue de glisser ?),
+   aucun Reel visible même un instant dans le fil, barre d'onglets sans trou, Reel en DM toujours bloqué au glissement.
 1. Retours de test du build 5 (utilisateur et sa sœur) : tuto,
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).

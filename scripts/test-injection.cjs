@@ -149,6 +149,8 @@ function validationTests() {
   bad('regex qui peut tourner sans fin (2)', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(?:.*)*x$'));
   bad('référence arrière', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(a)\\1$'));
   bad('silent pas vrai/faux', 'instagram', (r) => (r.rules[0].silent = 'oui'));
+  bad('cell pas vrai/faux', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell = 'oui'));
+  assert.equal(base('instagram').rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell, true);
   // Les redirections du dépôt ($1 compris) restent acceptées.
   assert.equal(base('instagram').rules.find((x) => x.id === 'ig.profileReels').urls[0].redirectTo, '/$1/');
   assert.equal(base('instagram').rules.find((x) => x.id === 'ig.followingFeed').silent, true);
@@ -245,48 +247,95 @@ async function browserTests() {
   assert.equal(await hidden(page, '#profileReelsTab'), true, 'onglet Reels du profil masqué');
   assert.equal(await page.getAttribute('#explore', 'href'), '/explore/search/', 'Explore -> recherche');
 
-  // Contenu ajouté plus tard (scroll infini) => MutationObserver.
-  await page.evaluate(() => {
-    const a = document.createElement('article');
-    a.id = 'late';
-    a.innerHTML = '<a href="/reel/EEE/">reel</a>';
-    document.getElementById('main').appendChild(a);
-  });
-  await page.waitForTimeout(300);
-  assert.equal(await hidden(page, '#late'), true, 'Reel chargé dynamiquement masqué');
-  // Seul ce qui vient d'apparaître est relu : un texte « Sponsorisé » ajouté DANS une
-  // publication déjà là est vu tout de suite…
+  // Changements de la page (scroll infini, texte ou lien mis à jour) : traités AVANT la
+  // prochaine image affichée, donc jamais visibles, même un instant. On fait le changement,
+  // puis on regarde juste après l'image suivante.
+  const atNextFrame = (p, change, sel) =>
+    p.evaluate(
+      ([change, sel]) => {
+        new Function(change)();
+        return new Promise((done) =>
+          requestAnimationFrame(() => setTimeout(() => done(getComputedStyle(document.querySelector(sel)).display === 'none'), 0)),
+        );
+      },
+      [change, sel],
+    );
+  assert.equal(
+    await atNextFrame(page, `const a = document.createElement('article'); a.id = 'late';
+      a.innerHTML = '<a href="/reel/EEE/">reel</a>'; document.getElementById('main').appendChild(a);`, '#late'),
+    true,
+    'Reel chargé dynamiquement masqué avant la prochaine image',
+  );
+  // Un texte « Sponsorisé » ajouté DANS une publication déjà là…
   await page.evaluate(() => {
     const a = document.createElement('article');
     a.id = 'adLater';
     a.innerHTML = '<span>Martin</span>';
     document.getElementById('main').appendChild(a);
   });
-  await page.waitForTimeout(300);
+  await page.waitForTimeout(100);
   assert.equal(await hidden(page, '#adLater'), false, 'publication normale visible');
-  await page.evaluate(() => {
-    const s = document.createElement('span');
-    s.textContent = 'Sponsorisé';
-    document.getElementById('adLater').appendChild(s);
-  });
-  await page.waitForTimeout(300);
-  assert.equal(await hidden(page, '#adLater'), true, 'pub ajoutée dans une publication existante masquée');
-  // …et un texte changé à l'intérieur d'un élément l'est par la relecture complète (≤ 2 s).
+  assert.equal(
+    await atNextFrame(page, `const s = document.createElement('span'); s.textContent = 'Sponsorisé';
+      document.getElementById('adLater').appendChild(s);`, '#adLater'),
+    true,
+    'pub ajoutée dans une publication existante masquée',
+  );
+  // …un texte changé à l'intérieur d'un élément (<b> dans le <span> visé)…
   await page.evaluate(() => {
     const a = document.createElement('article');
     a.id = 'adText';
     a.innerHTML = '<span><b>Spon</b></span>';
+    const b = document.createElement('article');
+    b.id = 'adText2';
+    b.innerHTML = '<span><b>Martin</b></span>';
+    document.getElementById('main').append(a, b);
+  });
+  await page.waitForTimeout(100);
+  assert.equal(await hidden(page, '#adText'), false, 'pas encore une pub');
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#adText b').appendChild(document.createTextNode('sorisé'));`, '#adText'),
+    true,
+    'texte ajouté dans un élément : masqué',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#adText2 b').firstChild.nodeValue = 'Sponsorisé';`, '#adText2'),
+    true,
+    'texte modifié sur place : masqué',
+  );
+  // …et un lien qui change d'adresse (React réutilise l'élément).
+  await page.evaluate(() => {
+    const a = document.createElement('article');
+    a.id = 'hrefLater';
+    a.innerHTML = '<a href="/p/ZZZ/">photo</a><a id="exploreLater" href="/p/Q/">x</a>';
     document.getElementById('main').appendChild(a);
   });
-  await page.waitForTimeout(300);
-  await page.evaluate(() => document.querySelector('#adText b').appendChild(document.createTextNode('sorisé')));
-  await page.waitForTimeout(150);
-  for (let i = 0; i < 25 && !(await hidden(page, '#adText')); i++) {
-    // la page continue de changer (fil qui se charge) : la relecture complète finit par passer
-    await page.evaluate(() => document.getElementById('main').appendChild(document.createElement('div')));
-    await page.waitForTimeout(150);
-  }
-  assert.equal(await hidden(page, '#adText'), true, 'texte changé dans un élément : masqué par la relecture complète');
+  await page.waitForTimeout(100);
+  assert.equal(await hidden(page, '#hrefLater'), false, 'photo visible');
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#hrefLater a').setAttribute('href', '/reel/ZZZ/');`, '#hrefLater'),
+    true,
+    'lien devenu un Reel : publication masquée',
+  );
+  await page.evaluate(() => document.getElementById('exploreLater').setAttribute('href', '/explore/'));
+  await page.waitForTimeout(100);
+  assert.equal(await page.getAttribute('#exploreLater', 'href'), '/explore/search/', 'lien devenu Explore : réécrit');
+
+  // Un site qui appelle replaceState sans changer d'adresse (position de défilement…) :
+  // rien n'est relu. Avant, toute la page était relue à chaque appel (le défilement accrochait).
+  const fullScans = await page.evaluate(async () => {
+    let n = 0;
+    const orig = Document.prototype.querySelectorAll;
+    Document.prototype.querySelectorAll = function (...args) {
+      n++;
+      return orig.apply(this, args);
+    };
+    for (let i = 0; i < 50; i++) history.replaceState({ scroll: i }, '', location.href);
+    await new Promise((r) => setTimeout(r, 100));
+    Document.prototype.querySelectorAll = orig;
+    return n;
+  });
+  assert.equal(fullScans, 0, `replaceState sans changement d'adresse : aucune relecture (${fullScans})`);
 
   // Navigation interne (pushState) vers /reels/ => retour accueil.
   await page.evaluate(() => history.pushState({}, '', '/reels/'));
@@ -392,8 +441,10 @@ async function browserTests() {
     document.body.insertAdjacentHTML('beforeend',
       '<div id="bar" style="display:flex;justify-content:space-around;width:300px">' +
       ['/', '/explore/', '/reels/', '/direct/inbox/', '/martin/'].map((h, i) =>
-        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span></div>').join('') +
-      '</div>');
+        '<div class="slot" id="slot' + i + '" style="flex:1"><span><a href="' + h + '">' + i + '</a></span>' +
+        (i === 2 ? '<span class="badge">•</span>' : '') + '</div>').join('') +
+      '</div>' +
+      '<div id="mixed"><div id="mixedCell"><a href="/reels/">r</a><a id="other" href="/p/X/">p</a></div></div>');
   });
   await page.waitForTimeout(200);
   assert.equal(await hidden(page, '#slot2'), true, 'case Reels masquée en entier');
@@ -401,6 +452,8 @@ async function browserTests() {
   assert.equal(await hidden(page, '#bar'), false, 'barre visible');
   const widths = await page.$$eval('#bar > .slot', (els) => els.filter((e) => e.offsetParent).map((e) => e.offsetWidth));
   assert.deepEqual(widths, [75, 75, 75, 75], `4 onglets de même largeur, sans trou (${widths})`);
+  assert.equal(await hidden(page, '#mixedCell'), false, 'une case qui contient un autre lien reste');
+  assert.equal(await hidden(page, '#other'), false, 'l’autre lien reste visible');
   await page.close();
 
   // --- Fil plein de Reels : pas d'espace vide, puis « Tu as tout vu » ---
@@ -507,6 +560,16 @@ async function browserTests() {
   await page.evaluate(() => document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '60vh')));
   await swipe(page, 200, 500, 100);
   assert.ok((await scrollTop(page, '#viewer')) > 0, 'le fil avec des vidéos normales défile');
+  // Petit écran (iPhone SE) : une vidéo 4:5 du fil y dépasse 75 % de la hauteur, mais ce
+  // n'est pas un Reel (pas en format portrait 9:16) : le fil défile toujours.
+  await page.setViewportSize({ width: 320, height: 480 });
+  await page.evaluate(() => {
+    document.getElementById('viewer').scrollTop = 0;
+    document.querySelectorAll('#viewer > div').forEach((d) => (d.style.height = '400px'));
+  });
+  await page.waitForTimeout(600);
+  await swipe(page, 160, 250, 20); // au-dessus du panneau de commentaires (en bas)
+  assert.ok((await scrollTop(page, '#viewer')) > 0, 'petit écran : une vidéo 4:5 ne bloque pas le défilement');
   await page.close();
 
   // Stories (plein écran aussi) : on peut toujours glisser vers le bas pour les fermer.
@@ -551,6 +614,11 @@ async function browserTests() {
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/explore/search/', 'Explore -> recherche');
   assert.equal(spa.loads(), 1, 'Explore -> recherche sans recharger la page');
+  const before = await spa.p.evaluate(() => history.length);
+  await spa.p.click('#exploreLink');
+  await spa.p.waitForTimeout(300);
+  assert.equal(await spa.p.evaluate(() => history.length), before, 'déjà sur la recherche : la page n’est pas empilée');
+  assert.equal(pathOf(spa.p), '/explore/search/', 'toujours sur la recherche');
   await spa.p.click('#homeLink');
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');

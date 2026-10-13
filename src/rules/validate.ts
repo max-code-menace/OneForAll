@@ -140,6 +140,10 @@ function sanitizeHide(raw: unknown, where: string): HideRule {
   const textMatch = optionalText(raw.text, `${where}.text`, 100);
   if (closest) rule.closest = closest;
   if (textMatch) rule.text = textMatch;
+  if (raw.cell !== undefined) {
+    if (typeof raw.cell !== 'boolean') fail(`${where}.cell`, 'vrai/faux attendu');
+    if (raw.cell) rule.cell = true;
+  }
   return rule;
 }
 

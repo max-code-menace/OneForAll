@@ -23,6 +23,13 @@ export type HideRule = {
    * (insensible à la casse, espaces ignorés). Ex: 'Shorts'.
    */
   text?: string;
+  /**
+   * Optionnel : masquer aussi la case qui contient l'élément (jusqu'à 3 niveaux de
+   * div/span/li, tant qu'elle ne contient aucun autre lien). Ex. la case de l'onglet
+   * Reels dans la barre du bas, pour ne pas laisser de trou entre les onglets.
+   * Ignoré sans risque par les anciennes versions de l'app.
+   */
+  cell?: boolean;
 };
 
 /** Réécrire la destination d'un lien (ex: Explore -> page de recherche). */

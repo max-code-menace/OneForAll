@@ -293,6 +293,10 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
         }}
         onContentProcessDidTerminate={onContentProcessDidTerminate}
         // --- Confort -------------------------------------------------------
+        // Élan du défilement (la page continue de glisser quand on lâche) : celui des listes
+        // d'iOS. Sans cette ligne, react-native-webview (nouvelle architecture, RNCWebView.mm)
+        // laisse la valeur à 0 et l'applique à chaque début de glissement.
+        decelerationRate="normal"
         // Pas de glissement gauche/droite (choix de l'utilisateur) : seul « tirer vers le bas » recharge.
         allowsBackForwardNavigationGestures={false}
         allowsInlineMediaPlayback
