@@ -205,7 +205,8 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   Place gardée en fractions (`oneforall:home-pos:v1`), la même pour tous les réseaux. Réglages → Bouton de
   retour : « Vibrations » (activées par défaut) et « Remettre le bouton en bas à droite ». Nouveau module natif
   `expo-haptics` → `TEST_RUNTIME` passé à `test-2` (app de test à refaire). Vérifié seulement dans la version web
-  (Chromium : glisser, aimant, appui) ; vibrations non vérifiables hors iPhone.
+  (Chromium : glisser, aimant, appui) ; vibrations non vérifiables hors iPhone. Le bandeau de fin du fil (à gauche
+  du bouton rond) et le bouton « Relevé » (en bas à gauche) ne suivent pas le bouton déplacé : chevauchement possible.
 - **Fluidité 3 : Instagram « sans accrochage »** (demande de l'utilisateur, 13/10 ; pas encore buildé ; mesuré
   seulement sur un faux fil dans Chromium, `npm run bench:inject`, jamais sur le vrai Instagram ni sur iPhone) :
   - **Élan du défilement** : `decelerationRate="normal"` sur la WebView. Trouvé dans react-native-webview 13.16.1 :
@@ -349,7 +350,6 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     vulnérabilités npm (outils de dev ; ne JAMAIS lancer `npm audit fix --force`).
 
 ## À faire (par ordre)
-<<<<<<< HEAD
 00. Branche `claude/confident-tesla-wid97v` (Fluidité 3 + fil virtualisé + repli des Reels + clavier + relevé +
    règles de la branche dans l'app de test) : testée par l'utilisateur dans l'app de test, PAS fusionnée.
    **Choix de l'utilisateur (13/10)** : continuer à tester avec l'app de test, puis UNE grosse pull request à la fin.
@@ -361,11 +361,14 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
    **13/10 (suite)** : ce travail a été repris tel quel sur `claude/loving-hopper-homd8x` (avance rapide, rien
    de changé). C'est désormais LA branche à récupérer (`git fetch origin claude/loving-hopper-homd8x` puis
    `git merge origin/claude/loving-hopper-homd8x`) dans une nouvelle session.
+   **13/10 (fin)** : à la demande de l'utilisateur, TOUT ce qui n'était pas sur `main` a été rassemblé sur
+   `claude/ecstatic-clarke-su8hx0` (loving-hopper/confident-tesla + `claude/facebook-verification` +
+   `claude/beautiful-mayer-mvofmc` + bouton rond déplaçable). C'est désormais LA branche à récupérer
+   (`git fetch origin claude/ecstatic-clarke-su8hx0` puis `git merge origin/claude/ecstatic-clarke-su8hx0`).
+   Les autres branches restent comme sauvegarde (rien de plus qu'elle).
    Vérifier ensuite : vide en bas du fil, carte de fin, clavier des messages, chaleur/data en bas du fil.
-=======
 - Prochaine session : demander si le **build 6** a été fabriqué/installé (pas confirmé le 13/10 ; il doit être
   fait APRÈS la PR 8, sinon le build échoue sur `expo-updates`). Les essais passent d'abord par l'app de test.
->>>>>>> origin/claude/beautiful-mayer-mvofmc
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
    Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité +
    Fluidité 2) ; vérifier sur iPhone : réseau retrouvé au même endroit après l'accueil, préparation au lancement,
