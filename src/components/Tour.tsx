@@ -55,7 +55,7 @@ export async function resetTours(): Promise<void> {
  * déclarent avec `target('nom')` (à poser en `ref` sur une View).
  * `onEnd` est appelé quand le tuto se termine (ou tout de suite s'il a déjà été vu).
  */
-export function useTour(screen: TourScreen, steps: TourStep[], ready: boolean, delay = 450) {
+export function useTour(screen: TourScreen, steps: TourStep[], ready: boolean, delay = 120) {
   const refs = useRef<Record<string, RefObject<View | null>>>({});
   const [running, setRunning] = useState(false);
   const [index, setIndex] = useState(0);
@@ -154,6 +154,8 @@ function TourOverlay({
   const bubbleH = useRef(150);
   /** Bulle visible et touchable (pas pendant un changement d'étape). */
   const [ready, setReady] = useState(false);
+  /** Texte affiché dans la bulle : change seulement quand la bulle est effacée. */
+  const [shown, setShown] = useState({ step, position, last });
 
   // Voile entier, bulle, point.
   const shade = useRef(new Animated.Value(0)).current;
@@ -173,6 +175,17 @@ function TourOverlay({
   const goFade = useRef(new Animated.Value(1)).current;
   const first = useRef(true);
   const leaving = useRef(false);
+  /** Changement d'étape : la nouvelle bulle attend que l'ancienne soit effacée ET que l'élément soit mesuré. */
+  const waiting = useRef({ fadedOut: true, rect: null as Rect | null });
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const later = (fn: () => void, ms: number) => {
+    timers.current.push(setTimeout(fn, ms));
+  };
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
+  // Les props suivent l'étape en cours ; on les lit au moment d'afficher la bulle.
+  const props = useRef({ step, position, last });
+  props.current = { step, position, last };
 
   const feel = () => {
     if (haptics) Haptics.selectionAsync().catch(() => {});
@@ -185,28 +198,42 @@ function TourOverlay({
     return holeBottom + 18 + bubbleH.current < H - 24 ? holeBottom + 18 : Math.max(24, holeTop - 18 - bubbleH.current);
   };
 
-  // Nouvel élément mesuré : le trou et le point y glissent, puis la bulle apparaît.
+  /** Nouveau texte dans la bulle (invisible), puis, une fois sa hauteur connue, apparition à sa place. */
+  const showBubble = (r: Rect) => {
+    setShown(props.current);
+    // Deux images : le temps que la bulle prenne la hauteur du nouveau texte (onLayout).
+    later(() => {
+      const top = bubbleTop(r);
+      bubbleY.setValue(top + (reduce ? 0 : 8));
+      setReady(true);
+      Animated.parallel([
+        Animated.timing(bubble, { toValue: 1, duration: reduce ? 120 : 200, easing: EASE, useNativeDriver: true }),
+        Animated.timing(bubbleY, { toValue: top, duration: reduce ? 0 : 260, easing: EASE, useNativeDriver: true }),
+      ]).start();
+    }, 34);
+  };
+
+  const maybeShow = () => {
+    const w = waiting.current;
+    if (w.fadedOut && w.rect) {
+      const r = w.rect;
+      w.rect = null;
+      showBubble(r);
+    }
+  };
+
+  // Nouvel élément mesuré : le trou et le point y glissent, la bulle suit aussitôt.
   useEffect(() => {
     if (!rect) return;
     const hole = { x: rect.x - PAD, y: rect.y - PAD, w: rect.w + PAD * 2, h: rect.h + PAD * 2 };
     const radius = Math.min(step.r, hole.w / 2, hole.h / 2);
     const cx = rect.x + rect.w * step.fx + (step.dx ?? 0);
     const cy = rect.y + rect.h * step.fy;
-    const move = reduce ? 0 : 460;
-
-    const showBubble = () => {
-      bubbleY.setValue(bubbleTop(rect) + (reduce ? 0 : 10));
-      setReady(true);
-      Animated.parallel([
-        Animated.timing(bubble, { toValue: 1, duration: reduce ? 150 : 280, easing: EASE, useNativeDriver: true }),
-        Animated.timing(bubbleY, { toValue: bubbleTop(rect), duration: reduce ? 0 : 380, easing: EASE, useNativeDriver: true }),
-      ]).start();
-    };
 
     if (first.current) {
-      // Ouverture : trou large et voile transparent, qui se resserrent ensemble.
+      // Ouverture : trou un peu large et voile transparent, qui se resserrent ensemble.
       first.current = false;
-      const grow = reduce ? 0 : 60;
+      const grow = reduce ? 0 : 40;
       holeX.setValue(hole.x - grow);
       holeY.setValue(hole.y - grow);
       holeW.setValue(hole.w + grow * 2);
@@ -215,24 +242,25 @@ function TourOverlay({
       dotX.setValue(cx);
       dotY.setValue(cy);
       Animated.parallel([
-        Animated.timing(shade, { toValue: 1, duration: reduce ? 200 : 420, easing: EASE, useNativeDriver: true }),
-        ...holeTo(hole, radius, reduce ? 0 : 560),
+        Animated.timing(shade, { toValue: 1, duration: reduce ? 150 : 280, easing: EASE, useNativeDriver: true }),
+        ...holeTo(hole, radius, reduce ? 0 : 380),
         Animated.sequence([
-          Animated.delay(reduce ? 0 : 260),
-          Animated.spring(dotIn, { toValue: 1, speed: 14, bounciness: 8, useNativeDriver: true }),
+          Animated.delay(reduce ? 0 : 120),
+          Animated.spring(dotIn, { toValue: 1, speed: 18, bounciness: 8, useNativeDriver: true }),
         ]),
       ]).start();
-      setTimeout(showBubble, reduce ? 150 : 300);
+      later(() => showBubble(rect), reduce ? 0 : 120);
       return;
     }
 
+    const move = reduce ? 0 : 340;
     Animated.parallel([
       ...holeTo(hole, radius, move),
       Animated.timing(dotX, { toValue: cx, duration: move, easing: PUSH, useNativeDriver: true }),
       Animated.timing(dotY, { toValue: cy, duration: move, easing: PUSH, useNativeDriver: true }),
     ]).start();
-    const timer = setTimeout(showBubble, reduce ? 0 : move - 160);
-    return () => clearTimeout(timer);
+    waiting.current.rect = rect;
+    maybeShow();
     // Seulement quand l'élément visé est mesuré.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rect]);
@@ -271,15 +299,18 @@ function TourOverlay({
     return () => loop.stop();
   }, [step, go, goFade, reduce]);
 
-  /** La bulle s'efface, puis on passe à l'étape suivante. */
+  /** Étape suivante : la bulle s'efface PENDANT que le trou part vers l'élément suivant. */
   function next() {
     if (!ready || leaving.current) return;
     feel();
     if (last) return leave(onNext);
     setReady(false);
-    Animated.timing(bubble, { toValue: 0, duration: reduce ? 100 : 160, easing: EASE, useNativeDriver: true }).start(() =>
-      onNext(),
-    );
+    waiting.current = { fadedOut: false, rect: null };
+    Animated.timing(bubble, { toValue: 0, duration: reduce ? 80 : 110, easing: EASE, useNativeDriver: true }).start(() => {
+      waiting.current.fadedOut = true;
+      maybeShow();
+    });
+    onNext();
   }
 
   /** Tout s'efface, puis le tuto se termine. */
@@ -288,8 +319,8 @@ function TourOverlay({
     leaving.current = true;
     setReady(false);
     Animated.parallel([
-      Animated.timing(shade, { toValue: 0, duration: reduce ? 150 : 300, easing: EASE, useNativeDriver: true }),
-      Animated.timing(bubble, { toValue: 0, duration: reduce ? 100 : 200, easing: EASE, useNativeDriver: true }),
+      Animated.timing(shade, { toValue: 0, duration: reduce ? 120 : 220, easing: EASE, useNativeDriver: true }),
+      Animated.timing(bubble, { toValue: 0, duration: reduce ? 80 : 150, easing: EASE, useNativeDriver: true }),
     ]).start(() => done());
   }
 
@@ -364,11 +395,11 @@ function TourOverlay({
           ]}
           accessibilityViewIsModal
         >
-          <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '600', color: t.ink }}>{step.title}</Text>
-          <Text style={{ fontSize: 15, lineHeight: 21, color: t.ink2 }}>{step.text}</Text>
+          <Text style={{ fontSize: 17, lineHeight: 22, fontWeight: '600', color: t.ink }}>{shown.step.title}</Text>
+          <Text style={{ fontSize: 15, lineHeight: 21, color: t.ink2 }}>{shown.step.text}</Text>
           <View style={styles.actions}>
-            <Text style={{ flex: 1, fontSize: 13, color: t.ink3 }}>{position}</Text>
-            {!last && (
+            <Text style={{ flex: 1, fontSize: 13, color: t.ink3 }}>{shown.position}</Text>
+            {!shown.last && (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => leave(onSkip)}
@@ -385,7 +416,7 @@ function TourOverlay({
                 { backgroundColor: t.primary, opacity: pressed ? 0.85 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] },
               ]}
             >
-              <Text style={{ fontSize: 15, fontWeight: '600', color: t.onPrimary }}>{last ? 'Compris' : 'Suivant'}</Text>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: t.onPrimary }}>{shown.last ? 'Compris' : 'Suivant'}</Text>
             </Pressable>
           </View>
         </Animated.View>

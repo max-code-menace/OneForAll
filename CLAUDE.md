@@ -332,6 +332,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   l'élément suivant (460 ms, courbe PUSH ; trou animé sans pilote natif car sa taille change), puis bulle qui
   réapparaît. Fin (« Compris », « Passer ») : tout s'efface avant de fermer. Petite vibration sur « Suivant »
   (réglage Vibrations). Geste mimé : le point s'efface avant de revenir au départ (plus de saut).
+  2e retour (13/10) : « temps de latence avant que le tuto pop » et « au moins 1 s entre deux étapes ». Resserré :
+  « Suivant » lance EN MÊME TEMPS l'effacement de la bulle (110 ms), le changement d'étape et le glissement du trou
+  (340 ms) ; nouvelle bulle dès que l'ancienne est effacée et l'élément mesuré (texte changé seulement bulle
+  invisible, `shown`). Attente avant le tuto : 450 → 120 ms (accueil), 600 → 450 ms (Réglages). Mesuré en version web
+  (Chromium, image par image) : « Suivant » → bulle suivante lisible 700 → 280 ms ; accueil affiché → 1re bulle
+  1,55 → 1 s (dont l'animation de lancement). Pas mesuré sur iPhone.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
   à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :

@@ -46,7 +46,7 @@ export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(false);
   const [badge, setBadge] = useState(false);
   // Petit tuto la 1re fois (après l'arrivée de l'écran).
-  const tour = useTour('settings', TOUR, true, 600);
+  const tour = useTour('settings', TOUR, true, 450);
   useEffect(() => {
     isNotificationsEnabled().then(setNotifications);
     isBadgeEnabled().then(setBadge);
