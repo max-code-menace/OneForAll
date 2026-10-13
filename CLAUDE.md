@@ -294,6 +294,9 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     accepté seulement 5 s après l'appui. Bouton en bas à gauche (en face du bouton rond), pas dans le bandeau du haut
     (il captait les touchers des icônes des en-têtes). Mentionné dans les Réglages et PRIVACY.md. C'est l'outil pour
     comprendre le vrai fil si un problème de place revient : demander à l'utilisateur de l'envoyer.
+  - **Retour de l'utilisateur (app de test, 13/10, fin de session)** : « ça saute plus » et « beaucoup plus de photos
+    et vidéos, comme si ça chargeait mieux ». Pas encore confirmés : vide en bas du fil, bandeau « Tu as tout vu »,
+    clavier des messages (champ visible ? clavier qui se ferme en touchant la conversation ?).
   - Pistes non faites : supprimer l'espaceur `div:has(> article){padding-bottom:0}` (unleash-focus, ordinateur) ;
     filtrer les données JSON avant React (IG-Clean ; champ « Reel » inconnu) ; compenser le défilement quand une
     publication change de taille au-dessus de l'écran (risque : arrêt de l'élan sur iOS).
@@ -326,6 +329,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     vulnérabilités npm (outils de dev ; ne JAMAIS lancer `npm audit fix --force`).
 
 ## À faire (par ordre)
+00. Branche `claude/confident-tesla-wid97v` (Fluidité 3 + fil virtualisé + repli des Reels + clavier + relevé +
+   règles de la branche dans l'app de test) : testée par l'utilisateur dans l'app de test, PAS fusionnée. Prochaine
+   étape quand il le demande : pull request vers `main`, fusion, puis build (production). ⚠️ À la fusion, les règles
+   JSON partent aussi vers les anciens builds : ils ignorent `cell`, `collapse` et `reload` (trou dans la barre
+   d'onglets, Reels encore en display:none donc vide/sauts possibles, Accueil en navigation douce) jusqu'au build.
+   Vérifier ensuite : vide en bas du fil, carte de fin, clavier des messages, chaleur/data en bas du fil.
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
    Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité +
    Fluidité 2) ; vérifier sur iPhone : réseau retrouvé au même endroit après l'accueil, préparation au lancement,
