@@ -106,6 +106,9 @@ function urlTests() {
     'https://example.com/?u=https://www.tiktok.com/',
     'about:blank',
   ]) assert.equal(banned(u), null, `ne devrait pas être banni : ${u}`);
+  // Le script injecté est du JavaScript valide (un retour à la ligne mal échappé dans le
+  // gabarit suffit à tout casser sur le téléphone, sans message).
+  for (const on of [true, false]) new Function(buildInjectedScript(PLATFORMS, () => on));
   console.log('✓ règles d’URL (React Native) et sites bannis');
 }
 
@@ -233,8 +236,9 @@ async function browserTests() {
     await page.waitForTimeout(250);
     return page;
   }
+  // Masqué = plus affiché (display:none) ou replié (boîte de hauteur 0, voir le champ collapse).
   const hidden = (page, sel) =>
-    page.$eval(sel, (el) => getComputedStyle(el).display === 'none' || !el.offsetParent);
+    page.$eval(sel, (el) => getComputedStyle(el).display === 'none' || !el.offsetParent || el.getBoundingClientRect().height < 1);
   const pathOf = (page) => new URL(page.url()).pathname + new URL(page.url()).search;
 
   // --- Instagram ---
@@ -256,7 +260,10 @@ async function browserTests() {
       ([change, sel]) => {
         new Function(change)();
         return new Promise((done) =>
-          requestAnimationFrame(() => setTimeout(() => done(getComputedStyle(document.querySelector(sel)).display === 'none'), 0)),
+          requestAnimationFrame(() => setTimeout(() => {
+            const el = document.querySelector(sel);
+            done(getComputedStyle(el).display === 'none' || el.getBoundingClientRect().height < 1);
+          }, 0)),
         );
       },
       [change, sel],
@@ -533,7 +540,10 @@ async function browserTests() {
   async function virtualFeed(platforms, mode, list, delay = 300, settle = true) {
     const p = await browser.newPage({ viewport: { width: 390, height: 760 } });
     await p.route('**/*', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: feedPage(mode, list, 'dom', 'late', delay) }));
-    await p.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+    await p.addInitScript(() => {
+      window.__snapMsgs = [];
+      window.ReactNativeWebView = { postMessage: (m) => { const o = JSON.parse(m); if (o.type === 'snapshot') window.__snapMsgs.push(o); } };
+    });
     await p.addInitScript(buildInjectedScript(platforms, noFollow));
     await p.goto('https://www.instagram.com/');
     if (!settle) return p;
@@ -559,7 +569,7 @@ async function browserTests() {
         await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
         const H = innerHeight;
         const on = [...document.getElementsByTagName('article')]
-          .filter((a) => a.getClientRects().length && a.getAttribute('data-sans-reels') !== 'hidden')
+          .filter((a) => a.getClientRects().length && a.getBoundingClientRect().height >= 1 && a.getAttribute('data-sans-reels') !== 'hidden')
           .filter((a) => { const b = a.getBoundingClientRect(); return b.bottom > 44 && b.top < H - 50; })
           .map((a) => a.getAttribute('data-id'));
         return { on, y: scrollY, max: document.documentElement.scrollHeight - H };
@@ -622,6 +632,85 @@ async function browserTests() {
   slow = await cardBefore(page, 'P14', 6000);
   assert.ok(slow.arrived, '1er morceau sans photo : les photos arrivent');
   assert.equal(slow.early, false, '1er morceau sans photo : pas de carte en attendant');
+  await page.close();
+
+  // V5 : Instagram ne mesure une publication que quand il la VOIT (IntersectionObserver), comme le
+  // décrit NoReel. En display:none (version précédente), un Reel n'est jamais vu : grand vide. Replié
+  // en boîte de 0 px (champ collapse), il est vu et mesuré à 0 : plus de vide.
+  const displayNone = PLATFORMS.map((p) =>
+    p.id !== 'instagram' ? p : {
+      ...p,
+      rules: p.rules.map((r) => (r.id !== 'ig.feedReels' ? r : {
+        ...r,
+        css: 'article:has(a[href*="/reel/"]) { display: none !important; }',
+        hide: r.hide.map(({ collapse, ...h }) => h),
+      })),
+    },
+  );
+  page = await virtualFeed(displayNone, 'V5', 'fin');
+  const v5witness = await page.evaluate(() => document.documentElement.scrollHeight);
+  assert.ok(v5witness > 10000, `V5 témoin : grand vide avec display:none (${v5witness} px)`);
+  await page.close();
+  page = await virtualFeed(PLATFORMS, 'V5', 'mixte');
+  const v5 = await sweep(page);
+  assert.deepEqual(v5.seen, ['P0', 'P18', 'P7'], `V5 : les 3 photos passent à l'écran (${v5.seen})`);
+  assert.ok(v5.empty <= 1, `V5 : pas de vide avec les Reels repliés (${v5.empty} écrans vides)`);
+  const v5h = await page.evaluate(() => document.documentElement.scrollHeight);
+  assert.ok(v5h < 3500, `V5 : la page s'arrête après la dernière photo (${v5h} px)`);
+  // Un Reel replié garde une boîte (mesurable) de hauteur 0, sans contenu affiché.
+  const box = await page.evaluate(() => {
+    const a = [...document.getElementsByTagName('article')].find((x) => x.getAttribute('data-sans-reels') === 'hidden');
+    return a && { rects: a.getClientRects().length, h: a.getBoundingClientRect().height, child: getComputedStyle(a.firstElementChild).display };
+  });
+  assert.deepEqual(box, { rects: 1, h: 0, child: 'none' }, `Reel replié : boîte de 0 px (${JSON.stringify(box)})`);
+  await page.close();
+
+  // Sauts du contenu pendant le défilement (vidéo de l'utilisateur, 13/10 : la page sautait d'une
+  // publication) : on descend puis remonte par pas de 60 px en suivant une photo à l'écran ; elle doit
+  // bouger exactement comme le défilement.
+  async function jumps(platforms) {
+    const p = await virtualFeed(platforms, 'V5', 'mixte', 300, false);
+    await p.waitForTimeout(700);
+    const n = await p.evaluate(async () => {
+      const frame = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const vis = () => [...document.getElementsByTagName('article')].filter((a) => a.getBoundingClientRect().height >= 1 && a.getAttribute('data-sans-reels') !== 'hidden');
+      let count = 0;
+      for (const dir of [1, -1]) {
+        for (let i = 0; i < 120; i++) {
+          const ref = vis()[0], y0 = scrollY, t0 = ref && ref.getBoundingClientRect().top;
+          window.scrollBy(0, 60 * dir);
+          await frame();
+          await new Promise((r) => setTimeout(r, 30));
+          await frame();
+          if (ref && ref.isConnected && vis().includes(ref) && Math.abs(t0 - ref.getBoundingClientRect().top - (scrollY - y0)) > 20) count++;
+          if (dir > 0 && i > 20 && scrollY + innerHeight >= document.documentElement.scrollHeight - 2) break;
+          if (dir < 0 && scrollY <= 0) break;
+        }
+      }
+      return count;
+    });
+    await p.close();
+    return n;
+  }
+  assert.ok((await jumps(displayNone)) > 0, 'V5 témoin : le contenu saute avec display:none');
+  assert.equal(await jumps(PLATFORMS), 0, 'V5 : aucun saut du contenu avec les Reels repliés');
+
+  // Relevé du mode diagnostic : la forme du fil, SANS contenu (ni nom de compte, ni texte, ni lien).
+  const { SNAPSHOT_SCRIPT } = require('../src/lib/buildInjection.ts');
+  page = await virtualFeed(PLATFORMS, 'V5', 'mixte');
+  await page.evaluate(() => history.replaceState(null, '', '/direct/t/1351278706338407/?hl=fr'));
+  await page.evaluate(SNAPSHOT_SCRIPT);
+  const snap = await page.evaluate(() => {
+    const m = (window.__snapMsgs || []);
+    return m[m.length - 1];
+  });
+  assert.ok(snap && /^Relevé OneForAll 1 · \/direct\/t\/…\/ \?hl$/m.test(snap.text), `relevé : en-tête sans identifiant (${snap && snap.text.split('\n')[0]})`);
+  assert.match(snap.text, /articles montés \d+/, 'relevé : articles comptés');
+  assert.match(snap.text, /<replié>/, 'relevé : publications repliées signalées');
+  for (const secret of ['compte_', '/reel/', '/p/', 'photo P', 'reel R', '1351278706338407', 'fr']) {
+    if (secret === 'fr') { assert.equal(/hl=fr/.test(snap.text), false, 'relevé : pas de valeur de paramètre'); continue; }
+    assert.equal(snap.text.includes(secret), false, `relevé : rien de personnel (${secret})`);
+  }
   await page.close();
 
   // Si Instagram gardait quand même une place (hauteurs tirées de ses données, V4) : au milieu

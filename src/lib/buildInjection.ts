@@ -133,6 +133,74 @@ export const AFTER_LOAD_SCRIPT = `
   true;
 `;
 
+/**
+ * Relevé de la structure du fil (mode diagnostic, bouton « Relevé ») : la FORME de la page, sans
+ * aucun contenu (ni texte, ni nom de compte, ni adresse de publication : seulement des tailles, des
+ * positions et le type de chaque case), pour comprendre le fil d'Instagram sans y avoir accès.
+ * Renvoyé à l'app, qui ouvre la feuille de partage d'iOS : l'utilisateur décide de l'envoyer ou non.
+ */
+export const SNAPSHOT_SCRIPT = `
+(function () {
+  function send(text) {
+    try { window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'snapshot', text: text.slice(0, 12000) })); } catch (e) {}
+  }
+  try {
+    var H = window.innerHeight, se = document.scrollingElement || document.documentElement, L = [];
+    var KNOWN = { direct: 1, t: 1, p: 1, reel: 1, reels: 1, explore: 1, search: 1, stories: 1, accounts: 1, inbox: 1 };
+    var path = location.pathname.split('/').map(function (x) { return !x || KNOWN[x] ? x : '…'; }).join('/');
+    var keys = location.search ? location.search.slice(1).split('&').map(function (x) { return x.split('=')[0]; }) : [];
+    var n = function (v) { return Math.round(v); };
+    var kind = function (el) {
+      if (el.querySelector('a[href*="/reel/"]')) return 'reel';
+      if (el.querySelector('a[href*="/p/"]')) return 'photo';
+      return el.tagName === 'ARTICLE' ? 'article' : '-';
+    };
+    var KEYS = ['position', 'top', 'height', 'min-height', 'padding-top', 'padding-bottom', 'transform', 'display'];
+    var inline = function (el) {
+      var out = [];
+      for (var i = 0; i < KEYS.length; i++) {
+        var v = el.style ? el.style.getPropertyValue(KEYS[i]) : '';
+        if (v) out.push(KEYS[i] + ':' + String(v).slice(0, 40));
+      }
+      return out.length ? ' {' + out.join(';') + '}' : '';
+    };
+    var mark = function (el) {
+      return (el.getAttribute('data-sans-reels') === 'hidden' ? (el.hasAttribute('data-sans-reels-collapse') ? ' <replié>' : ' <masqué>') : '') +
+        (el.getAttribute('data-sans-reels-row') === 'hidden' ? ' <case masquée>' : '');
+    };
+    var box = function (el) {
+      var cs = getComputedStyle(el), r = el.getBoundingClientRect(), role = el.getAttribute('role');
+      return el.tagName.toLowerCase() + (role ? '[' + role + ']' : '') + ' haut=' + n(r.top) + ' h=' + n(r.height) + ' ' + cs.position +
+        (cs.paddingTop !== '0px' ? ' pt=' + cs.paddingTop : '') + (cs.paddingBottom !== '0px' ? ' pb=' + cs.paddingBottom : '') +
+        (cs.transform !== 'none' ? ' transform' : '') + ' enfants=' + el.children.length + inline(el) + mark(el);
+    };
+    L.push('Relevé OneForAll 1 · ' + path + (keys.length ? ' ?' + keys.join('&') : ''));
+    L.push('écran ' + window.innerWidth + 'x' + H + ' · défilé ' + n(window.scrollY) + ' sur ' + n(se.scrollHeight));
+    var arts = document.getElementsByTagName('article');
+    var card = document.getElementById('sans-reels-feed-end');
+    L.push('articles montés ' + arts.length + ' · carte de fin ' + (card && getComputedStyle(card).display !== 'none' ? 'affichée' : 'non'));
+    if (arts.length) {
+      L.push('Ancêtres du 1er article :');
+      for (var el = arts[0], d = 0; el && el !== document.documentElement && d < 12; el = el.parentElement, d++) L.push(' ' + d + ' ' + box(el));
+      var list = arts[0].parentElement, others = 0;
+      L.push('Enfants de son parent (' + list.children.length + ') :');
+      for (var i = 0; i < list.children.length && i < 60; i++) L.push(' ' + i + ' ' + kind(list.children[i]) + ' ' + box(list.children[i]));
+      for (var j = 0; j < arts.length; j++) if (arts[j].parentElement !== list) others++;
+      if (others) L.push(others + ' article(s) ailleurs');
+    }
+    // Grands blocs sans publication : espaceurs probables du fil.
+    var big = 0, divs = document.querySelectorAll('main div, body > div');
+    for (var k = 0; k < divs.length && big < 8; k++) {
+      if (divs[k].offsetHeight > 2 * H && !divs[k].getElementsByTagName('article').length) { L.push('bloc sans publication : ' + box(divs[k])); big++; }
+    }
+    send(L.join('\\n'));
+  } catch (e) {
+    send('Relevé impossible : ' + String(e && e.message));
+  }
+})();
+true;
+`;
+
 // Écrit en JavaScript "classique" (pas de TypeScript ici : c'est exécuté par la page web).
 const RUNTIME = `
 (function () {
@@ -171,13 +239,27 @@ const RUNTIME = `
 
   // Règles de masquage regroupées par sélecteur : chaque sélecteur n'est cherché
   // qu'une fois par nettoyage (ex. « article span » sert à 7 règles de texte).
-  var hideSels = [], hideBySel = {}, textSel = {}, maxText = 0;
+  var hideSels = [], hideBySel = {}, textSel = {}, maxText = 0, anyCollapse = false;
   for (var h = 0; h < hide.length; h++) {
     var hs = hide[h].selector, ht = hide[h].text ? norm(hide[h].text) : null;
     if (!hideBySel[hs]) { hideBySel[hs] = []; hideSels.push(hs); }
-    hideBySel[hs].push({ closest: hide[h].closest, cell: !!hide[h].cell, text: ht });
+    hideBySel[hs].push({ closest: hide[h].closest, cell: !!hide[h].cell, collapse: !!hide[h].collapse, text: ht });
+    if (hide[h].collapse) anyCollapse = true;
     if (ht) { textSel[hs] = true; maxText = Math.max(maxText, ht.length); }
   }
+  // « Replié » (champ collapse) : au lieu de disparaître (display:none), l'élément devient une
+  // boîte de hauteur 0, sans contenu. Pour un fil VIRTUALISÉ comme celui d'Instagram : un élément
+  // en display:none n'est plus « vu » par le site, qui garde pour lui une place estimée. D'où le
+  // grand vide en bas du fil et les sauts du contenu pendant le défilement (vidéo de l'utilisateur,
+  // 13/10). Boîte de 0 px : le site la mesure, et sa place devient 0 (NoReel fait de même).
+  if (anyCollapse) {
+    // Sa case éventuelle (rowOf) est repliée aussi, mais SANS cacher son contenu : la publication
+    // repliée qu'elle contient doit rester mesurable.
+    css = '[data-sans-reels-collapse],[data-sans-reels-collapse-row]{height:0!important;min-height:0!important;' +
+      'max-height:0!important;margin:0!important;padding:0!important;border:0!important;overflow:hidden!important}' +
+      '[data-sans-reels-collapse]>*{display:none!important}\\n' + css;
+  }
+
   // Un texte bien plus long que le plus long des textes cherchés ne peut pas lui être
   // égal : on ne le normalise pas (légendes de plusieurs lignes…).
   var MAX_RAW = maxText * 2 + 16;
@@ -373,19 +455,26 @@ const RUNTIME = `
 
   // Le « display » que le site avait mis lui-même est gardé, pour le remettre au réaffichage.
   var hiddenTotal = 0; // publications masquées depuis le chargement (carte de fin)
-  function hideEl(el, attr) {
+  function hideEl(el, attr, collapse) {
+    el.setAttribute(attr, 'hidden');
+    // Replié : géré par la feuille de style (attribut), rien n'est écrit dans son style.
+    if (collapse) { el.setAttribute(collapse === 'row' ? 'data-sans-reels-collapse-row' : 'data-sans-reels-collapse', ''); return; }
     if (!el.__sansReelsDisplay) {
       el.__sansReelsDisplay = [el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')];
     }
     el.style.setProperty('display', 'none', 'important');
-    el.setAttribute(attr, 'hidden');
   }
   function showEl(el, attr) {
+    el.removeAttribute(attr);
+    if (el.hasAttribute('data-sans-reels-collapse') || el.hasAttribute('data-sans-reels-collapse-row')) {
+      el.removeAttribute('data-sans-reels-collapse');
+      el.removeAttribute('data-sans-reels-collapse-row');
+      return;
+    }
     var d = el.__sansReelsDisplay;
     el.__sansReelsDisplay = null;
     if (d && d[0]) el.style.setProperty('display', d[0], d[1]);
     else el.style.removeProperty('display');
-    el.removeAttribute(attr);
   }
 
   // Un élément masqué est-il encore visé par une règle ?
@@ -520,13 +609,13 @@ const RUNTIME = `
           }
           var target = (r.closest && el.closest(r.closest)) || el;
           if (target.getAttribute('data-sans-reels') === 'hidden') continue;
-          hideEl(target, 'data-sans-reels');
+          hideEl(target, 'data-sans-reels', r.collapse);
           hiddenTotal++;
           // Publication entière masquée : on masque aussi la case qui ne contenait qu'elle,
           // sinon le site garde sa place et laisse un grand espace vide dans le fil.
           var box = r.closest ? rowOf(target) : r.cell ? cellOf(target) : target;
           if (box !== target) {
-            hideEl(box, 'data-sans-reels-row');
+            hideEl(box, 'data-sans-reels-row', r.collapse ? 'row' : false);
             target.__sansReelsBox = box;
             box.__sansReelsOf = target;
           }
@@ -586,7 +675,7 @@ const RUNTIME = `
   // roots : morceaux changés (l'adresse, elle, est surveillée à part : navigation, minuteur).
   // Sans roots : changement de page ou chargement. deep : voir clean().
   var themeQueued = false;
-  function run(roots, deep) {
+  function run(roots, deep, noUrl) {
     reportUnread();
     if (roots) {
       if (leaving) return;
@@ -595,7 +684,7 @@ const RUNTIME = `
       return;
     }
     reportPath();
-    if (checkUrl()) return;
+    if (noUrl ? leaving : checkUrl()) return;
     themeQueued = true;
     addStyle();
     // Chargement : toute la page, tout de suite. Changement de page : tout ce qui est
@@ -717,7 +806,7 @@ const RUNTIME = `
   ['pushState', 'replaceState'].forEach(function (name) {
     var original = history[name];
     history[name] = function () {
-      var before = location.href;
+      var before = location.href, fromFeed = location.pathname === '/';
       var result = original.apply(this, arguments);
       // Juste APRÈS la navigation du site (micro-tâche) : une redirection lancée pendant
       // qu'il change lui-même de page pouvait passer inaperçue de son routeur, et finir
@@ -725,15 +814,24 @@ const RUNTIME = `
       // Seulement si l'adresse a changé : un site peut appeler replaceState sans arrêt
       // (pour retenir la position de défilement…) ; tout relire à chaque fois faisait
       // accrocher le défilement.
-      if (location.href !== before) afterSite();
+      // Le site qui RÉÉCRIT l'adresse du fil (replaceState), par exemple vers celle d'une
+      // publication qui passe à l'écran, ne change pas de page : aucune règle d'adresse ne
+      // s'applique alors (sinon une publication repliée qui passe pourrait renvoyer à l'accueil).
+      if (location.href !== before) afterSite(name === 'replaceState' && fromFeed && location.pathname !== '/');
       return result;
     };
   });
-  var afterQueued = false;
-  function afterSite() {
+  var afterQueued = false, afterNoUrl = true;
+  function afterSite(noUrl) {
+    afterNoUrl = afterNoUrl && !!noUrl;
     if (afterQueued) return;
     afterQueued = true;
-    Promise.resolve().then(function () { afterQueued = false; run(); });
+    Promise.resolve().then(function () {
+      var skip = afterNoUrl;
+      afterQueued = false;
+      afterNoUrl = true;
+      run(null, false, skip);
+    });
   }
   window.addEventListener('popstate', function () { run(); });
 
@@ -761,6 +859,14 @@ const RUNTIME = `
     if (action.label && !action.silent) post({ type: 'redirected', label: action.label });
     if (action.reload) hardGo(action.target, false);
     else softGo(action.target, false);
+  }, true);
+
+  // Une vidéo dans une publication masquée ou repliée ne joue jamais (même sans le son).
+  document.addEventListener('play', function (e) {
+    var v = e.target;
+    if (v && v.closest && v.closest('[data-sans-reels="hidden"]')) {
+      try { v.muted = true; v.pause(); } catch (err) {}
+    }
   }, true);
 
   // c) Contenu ajouté ou changé (scroll infini, changement d'onglet, texte mis à jour,
@@ -930,7 +1036,9 @@ const RUNTIME = `
     // Masquée par OneForAll (attribut), ou déjà par le CSS des règles, ou dans une case masquée
     // (dans ces deux cas, aucune boîte).
     var isHidden = function (a) {
-      return a.getAttribute('data-sans-reels') === 'hidden' || !a.getClientRects().length;
+      if (a.getAttribute('data-sans-reels') === 'hidden') return true;
+      var rects = a.getClientRects();
+      return !rects.length || rects[0].height < 1; // repliée par le CSS des règles
     };
     var feedState = function () {
       if (location.pathname !== '/') return '';
@@ -984,11 +1092,12 @@ const RUNTIME = `
       card.style.display = shown ? 'flex' : 'none';
       shownState = shown;
     };
-    // Défilement (de la page ou d'un conteneur) : vérifié au plus une fois par image, sans
-    // freiner, après le masquage de cette image (voir onFrame).
+    // Défilement (de la page ou d'un conteneur) : vérifié au plus toutes les 150 ms (pas à
+    // chaque image : moins de travail pendant qu'on fait défiler), après le masquage (onFrame).
+    var scrollTimer = null;
     window.addEventListener('scroll', function () {
-      endDue = true;
-      needFrame();
+      if (scrollTimer) return;
+      scrollTimer = setTimeout(function () { scrollTimer = null; endDue = true; needFrame(); }, 150);
     }, { capture: true, passive: true });
   }
 

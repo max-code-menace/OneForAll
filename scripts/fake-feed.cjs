@@ -12,6 +12,10 @@
  *  V2 « absolues »   : position:absolute, top = somme des hauteurs mesurées (même mesure, même cache).
  *  V3 « absolues+RO »: V2 + ResizeObserver qui remet la hauteur à jour.
  *  V4 « données »    : V2 mais hauteurs calculées depuis les données (format du média), jamais mesurées.
+ *  V5 « vues »       : espaceurs comme V1, mais les <article> sont directement dans la liste (pas de
+ *                      case autour, comme sur le web mobile d'Instagram) et leur hauteur n'est mesurée
+ *                      que quand un IntersectionObserver les VOIT. Un article en display:none n'est
+ *                      jamais vu : sa place estimée reste (ce que décrit NoReel, WebView Android).
  *
  * Listes :
  *  fin    : 3 photos puis 40 Reels (rien après).
@@ -67,7 +71,16 @@ var lastPhotoId = null; data.forEach(function(d){ if (d.kind==='photo') lastPhot
 var loaded = Math.min(PAGE, data.length), loading = false, fetches = 0, renders = 0;
 var heights = new Map(), rows = new Map();
 var list = document.getElementById('list'), loader = document.getElementById('loader');
-var ABS = MODE !== 'V1';
+var ABS = MODE !== 'V1' && MODE !== 'V5';
+var io = MODE === 'V5' ? new IntersectionObserver(function(entries){
+  var dirty = false;
+  for (var i=0;i<entries.length;i++){
+    if (!entries[i].isIntersecting) continue;
+    var id = entries[i].target.getAttribute('data-id'), hh = Math.round(entries[i].boundingClientRect.height);
+    if (heights.get(id) !== hh) { heights.set(id, hh); dirty = true; }
+  }
+  if (dirty) render();
+}) : null;
 var ro = MODE === 'V3' ? new ResizeObserver(function(entries){
   var dirty = false;
   for (var i=0;i<entries.length;i++){
@@ -92,7 +105,7 @@ function rowFor(it){
     '<div class="hd"><a href="/u' + it.id + '/">compte_' + it.id + '</a></div>' +
     '<div><a href="' + href + '"><div class="media"></div></a></div>' +
     '<section class="act"></section><div class="cap"><span>' + it.kind + ' ' + it.id + '</span></div></article></div></div>';
-  r = t.content.firstChild;
+  r = MODE === 'V5' ? t.content.querySelector('article') : t.content.firstChild;
   if (ABS) { r.style.position = 'absolute'; r.style.left = '0'; r.style.right = '0'; }
   rows.set(it.id, r);
   return r;
@@ -114,7 +127,7 @@ function render(){
     for (var k = s; k <= e; k++) keep.add(data[k].id);
     // Démonter ce qui sort de la fenêtre.
     rows.forEach(function(r, id){
-      if (!keep.has(id) && r.parentNode) { if (ro) ro.unobserve(r); r.parentNode.removeChild(r); }
+      if (!keep.has(id) && r.parentNode) { if (ro) ro.unobserve(r); if (io) io.unobserve(r); r.parentNode.removeChild(r); }
     });
     var fresh = [];
     for (var k2 = s; k2 <= e; k2++) {
@@ -122,7 +135,7 @@ function render(){
       var wasIn = r.parentNode === list;
       if (list.children[idx] !== r) list.insertBefore(r, list.children[idx] || null);
       if (ABS) { r.style.top = offs[k2] + 'px'; }
-      if (!wasIn) { fresh.push(it); if (ro) ro.observe(r); }
+      if (!wasIn) { fresh.push(it); if (ro) ro.observe(r); if (io) io.observe(r); }
     }
     if (ABS) list.style.height = total + 'px';
     else {
@@ -131,7 +144,7 @@ function render(){
     }
     // Mesure synchrone (comme useLayoutEffect), une seule fois par publication, gardée pour toujours.
     var changed = false;
-    if (MODE !== 'V4') {
+    if (MODE !== 'V4' && MODE !== 'V5') {
       for (var f = 0; f < fresh.length; f++) {
         if (heights.has(fresh[f].id)) continue;
         var mh = rows.get(fresh[f].id).offsetHeight;

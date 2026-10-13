@@ -144,6 +144,10 @@ function sanitizeHide(raw: unknown, where: string): HideRule {
     if (typeof raw.cell !== 'boolean') fail(`${where}.cell`, 'vrai/faux attendu');
     if (raw.cell) rule.cell = true;
   }
+  if (raw.collapse !== undefined) {
+    if (typeof raw.collapse !== 'boolean') fail(`${where}.collapse`, 'vrai/faux attendu');
+    if (raw.collapse) rule.collapse = true;
+  }
   return rule;
 }
 

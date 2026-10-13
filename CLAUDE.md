@@ -258,10 +258,34 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     s'arrête alors que des photos existent) ; à l'inverse, un fil sans fin de Reels peut charger sans arrêt. Les
     anciens builds (≤ 6) reçoivent aussi le CSS (pas de frein à ce chargement) ; ils interceptaient déjà le lien
     Accueil (comportement inchangé).
-  - Pistes non faites : remplacer `display:none` par une boîte de 0 px mesurable (NoReel, No-Reel Safari, ReelLess
-    le font pour ne pas dérégler le chargement d'Instagram ; risque : publication de 0 px « visible » pour Instagram,
-    lecture auto, adresse qui passe à /reel/) ; supprimer l'espaceur `div:has(> article){padding-bottom:0}`
-    (unleash-focus, ordinateur) ; filtrer les données JSON avant React (IG-Clean ; champ « Reel » inconnu).
+  - **Essai suivant (app de test, 13/10, captures + vidéo)** : fil Abonnements OK (« Suivi(e) », compteur
+    « redirection OneForAll ») ; le VIDE RESTAIT malgré le CSS display:none (la carte « Ici, que des Reels masqués »
+    s'affichait) ; vidéo (8 s, 60 i/s, analysée image par image) : 2 SAUTS du contenu d'environ une publication
+    (en remontant et en descendant), image blanche 2 images après le saut. Conclusion : `display:none` dérègle le
+    fil d'Instagram, même appliqué tôt (comme le dit NoReel). Faux fil V5 (`fake-feed.cjs` : articles directement
+    dans la liste, hauteur mesurée seulement quand un IntersectionObserver les voit) : display:none → vide
+    > 10 000 px et 10 sauts jusqu'à 600 px ; replié → 0 vide, 0 saut.
+  - **Correctif « repli »** (non buildé) : champ de règle `collapse` (HideRule, ignoré par les anciens builds) sur
+    ig.feedReels, ig.ads, ig.suggestedPosts : l'article devient une boîte de hauteur 0 SANS contenu
+    (`[data-sans-reels-collapse]` : height/min/max 0, marges/bordures 0, overflow hidden ; enfants display:none),
+    réglée par la feuille de style du moteur (attributs, pas de style écrit). Sa case éventuelle (rowOf) est repliée
+    sans cacher son contenu (`data-sans-reels-collapse-row`). CSS de ig.feedReels idem (les anciens builds mettent
+    encore display:none après). Risques pris en compte : vidéo d'une publication masquée/repliée mise en pause et
+    muette (écouteur `play`) ; si Instagram RÉÉCRIT l'adresse du fil (replaceState depuis « / ») vers une
+    publication qui passe, aucune règle d'adresse ne s'applique (sinon retour à l'accueil). Carte : une publication
+    repliée compte comme masquée ; vérification au défilement au plus toutes les 150 ms (avant : chaque image).
+  - **Clavier des messages** (captures : le champ de saisie se cachait derrière la barre « ˄ ˅ ✓ » d'iOS en tapant
+    ou en effaçant) : `hideKeyboardAccessoryView` (plus de barre). Supposé : fermer le clavier en touchant la
+    conversation. Si ça ne suffit pas : redimensionner la WebView avec le clavier (KeyboardAvoidingView autour de
+    SiteWebView seulement, pas du bouton rond), risque de double décalage.
+  - **Bouton « Relevé »** dans le bandeau du mode Diagnostic (`SNAPSHOT_SCRIPT`) : la FORME du fil (ancêtres du 1er
+    article avec hauteurs/paddings/style écrit, chaque case de la liste : type reel/photo, hauteur, repliée ou non,
+    blocs vides), SANS contenu (chemin réduit aux routes connues, noms de paramètres sans valeurs, aucun texte ni
+    lien ; testé). Ouvre la feuille de partage d'iOS (`Share`), accepté seulement 5 s après l'appui. C'est l'outil
+    pour comprendre le vrai fil si un problème de place revient : demander à l'utilisateur de l'envoyer.
+  - Pistes non faites : supprimer l'espaceur `div:has(> article){padding-bottom:0}` (unleash-focus, ordinateur) ;
+    filtrer les données JSON avant React (IG-Clean ; champ « Reel » inconnu) ; compenser le défilement quand une
+    publication change de taille au-dessus de l'écran (risque : arrêt de l'élan sur iOS).
   - Bandeau « Utiliser l'application » (visible sur les captures) : aucun sélecteur fiable connu ; les autres outils
     cherchent le texte puis remontent à l'ancêtre `position: fixed` (6 niveaux). Non fait (non demandé).
   - Sources (copies locales seulement pendant la session) : Kalbra/NoReel PR #51, SHADOWDANCH/instagram-noslop,
@@ -299,8 +323,10 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
    connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
    Avec Fluidité 3 (même build, ou app de test) : élan du défilement d'Instagram (la page continue de glisser ?),
    aucun Reel visible même un instant dans le fil, barre d'onglets sans trou, Reel en DM toujours bloqué au glissement.
-   Fil (13/10, app de test) : plus de vide sous la dernière photo ? carte « Tu as tout vu » en bas ? en-tête
-   « Abonnements » (plus « Pour vous ») après Accueil ? aucune photo qui disparaît ? chaleur/data en bas du fil.
+   Fil (13/10, app de test) : en-tête « Suivi(e) » après Accueil : OK. Avec le repli : plus de vide sous la dernière
+   photo ? plus de sauts en défilant ? carte « Tu as tout vu » en bas ? aucune photo qui disparaît ? chaleur/data en
+   bas du fil ? Messages : le champ reste-t-il au-dessus du clavier, et le clavier se ferme-t-il ? Si le vide
+   revient : demander le « Relevé » (mode Diagnostic).
 1. Retours de test du build 5 (utilisateur et sa sœur) : tuto,
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).

@@ -30,6 +30,13 @@ export type HideRule = {
    * Ignoré sans risque par les anciennes versions de l'app.
    */
   cell?: boolean;
+  /**
+   * Optionnel : au lieu de faire disparaître l'élément (display:none), le replier en une boîte
+   * de hauteur 0 sans contenu. Pour un fil VIRTUALISÉ (Instagram) : un élément en display:none
+   * n'est plus « vu » par le site, qui garde pour lui une place estimée (vide, sauts du contenu).
+   * Ignoré sans risque par les anciennes versions de l'app (elles font display:none).
+   */
+  collapse?: boolean;
 };
 
 /** Réécrire la destination d'un lien (ex: Explore -> page de recherche). */

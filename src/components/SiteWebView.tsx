@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
-import { Linking, Pressable, Platform as RNPlatform, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, Platform as RNPlatform, Share, StyleSheet, Text, View } from 'react-native';
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from 'react-native-webview';
 import type { WebViewNavigationEvent } from 'react-native-webview/lib/WebViewTypes';
 import type { ShouldStartLoadRequest } from 'react-native-webview/lib/WebViewTypes';
 
 import { syncAppBadge } from '../lib/backgroundCheck';
 import { findBannedSite } from '../lib/banned';
-import { AFTER_LOAD_SCRIPT, buildInjectedScript, setPageHiddenCommand } from '../lib/buildInjection';
+import { AFTER_LOAD_SCRIPT, buildInjectedScript, setPageHiddenCommand, SNAPSHOT_SCRIPT } from '../lib/buildInjection';
 import { useRules } from '../lib/rules';
 import { useSettings } from '../lib/settings';
 import { INSIDE_HOSTS } from '../lib/sites';
@@ -69,6 +69,12 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
   const [loadsShown, setLoadsShown] = useState(loads.current);
   /** Cause connue du prochain chargement (une redirection décidée par l'app…). */
   const nextCause = useRef<string | null>(null);
+  /** Moment où l'utilisateur a demandé un relevé (mode diagnostic) : seule une réponse attendue est acceptée. */
+  const snapshotAsked = useRef(0);
+  function askSnapshot() {
+    snapshotAsked.current = Date.now();
+    webRef.current?.injectJavaScript(SNAPSHOT_SCRIPT);
+  }
   // Mode diagnostic activé pendant que le site reste ouvert : on affiche l'état actuel.
   useEffect(() => {
     if (!diagnostic) return;
@@ -241,6 +247,14 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
       case 'feedLocked':
         showBanner('Les vidéos suivantes sont bloquées');
         break;
+      case 'snapshot':
+        // Relevé demandé il y a moins de 5 s (bouton du mode diagnostic) : feuille de partage d'iOS,
+        // c'est l'utilisateur qui choisit de l'envoyer. Une page ne peut pas l'ouvrir d'elle-même.
+        if (onThisSite && typeof m.text === 'string' && Date.now() - snapshotAsked.current < 5000) {
+          snapshotAsked.current = 0;
+          Share.share({ message: m.text.slice(0, 12000) }).catch(() => {});
+        }
+        break;
     }
   }
 
@@ -307,6 +321,11 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
         // Vidéos qui démarrent seules (sans le son), comme dans la vraie app (choix de l'utilisateur).
         // Sinon une vidéo YouTube ouverte peut demander un 2e appui sur Lecture.
         mediaPlaybackRequiresUserAction={false}
+        // Clavier sans la petite barre « ˄ ˅ ✓ » d'iOS (comme une vraie app) : dans les messages
+        // d'Instagram, le champ de saisie se retrouvait caché derrière elle en tapant ou en effaçant
+        // (captures de l'utilisateur, 13/10). Pour fermer le clavier : toucher la conversation (supposé,
+        // comme dans Safari ; à vérifier sur iPhone).
+        hideKeyboardAccessoryView
         // Appui long sur un lien : pas d'aperçu à la Safari (pas comme une app, et l'aperçu
         // charge la page à part, peut-être sans nos blocages).
         allowsLinkPreview={false}
@@ -331,13 +350,25 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
         )}
       />
       {diagnostic && (
-        <View pointerEvents="none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
-          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
-            Page : {path || '…'}
-          </Text>
-          <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
-            Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
-          </Text>
+        <View pointerEvents="box-none" style={[styles.diagnostic, { backgroundColor: t.inverse }]}>
+          <View pointerEvents="none" style={styles.flex}>
+            <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+              Page : {path || '…'}
+            </Text>
+            <Text style={[styles.diagnosticText, { color: t.onInverse }]} numberOfLines={2}>
+              Chargements : {loadsShown.count} · dernier : {loadsShown.last || '…'}
+            </Text>
+          </View>
+          {/* Relevé de la FORME de la page (aucun contenu), à partager si l'utilisateur le veut. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Relevé de la structure de la page, à partager"
+            hitSlop={8}
+            onPress={askSnapshot}
+            style={({ pressed }) => [styles.snapshot, { borderColor: t.onInverse, opacity: pressed ? 0.6 : 1 }]}
+          >
+            <Text style={{ fontSize: 13, fontWeight: '600', color: t.onInverse }}>Relevé</Text>
+          </Pressable>
         </View>
       )}
       <Toast ref={toast} pillRef={toastRef} />
@@ -351,12 +382,16 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 8,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     opacity: 0.92,
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
     maxWidth: '92%',
   },
+  snapshot: { minHeight: 32, paddingHorizontal: 10, borderRadius: 16, borderWidth: 1, justifyContent: 'center' },
   diagnosticText: { fontSize: 12, fontFamily: 'Menlo' },
   error: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
   errorTitle: { fontSize: 22, fontWeight: '700', textAlign: 'center' },

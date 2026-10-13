@@ -105,15 +105,18 @@
       "defaultEnabled": true,
       "feedEnd": true,
       "css": [
-        "/* Masqué dès le 1er calcul de la page, AVANT qu'Instagram ne mesure la publication : son fil",
-        "   ne garde que les publications proches de l'écran et réserve la place des autres d'après",
-        "   leur hauteur mesurée. Masqué plus tard (script), un Reel gardait sa place : grand vide blanc. */",
-        "article:has(a[href*=\"/reel/\"]) { display: none !important; }"
+        "/* Replié dès le 1er calcul de la page, AVANT qu'Instagram ne mesure la publication : une boîte",
+        "   de hauteur 0, sans contenu. Pas display:none : le fil d'Instagram ne garde que les publications",
+        "   proches de l'écran et réserve la place des autres ; une publication en display:none n'est plus",
+        "   « vue », sa place estimée restait (grand vide blanc, sauts du contenu en défilant). */",
+        "article:has(a[href*=\"/reel/\"]) { height: 0 !important; min-height: 0 !important; max-height: 0 !important; margin: 0 !important; padding: 0 !important; border: 0 !important; overflow: hidden !important; }",
+        "article:has(a[href*=\"/reel/\"]) > * { display: none !important; }"
       ],
       "hide": [
         {
           "selector": "article a[href*=\"/reel/\"]",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         }
       ]
     },
@@ -148,22 +151,26 @@
         {
           "selector": "article span",
           "text": "Sponsorisé",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         },
         {
           "selector": "article span",
           "text": "Sponsored",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         },
         {
           "selector": "article span",
           "text": "Publicité",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         },
         {
           "selector": "article span",
           "text": "Ad",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         }
       ]
     },
@@ -176,17 +183,20 @@
         {
           "selector": "article span",
           "text": "Suggested for you",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         },
         {
           "selector": "article span",
           "text": "Suggestions pour vous",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         },
         {
           "selector": "article span",
           "text": "Suggéré pour vous",
-          "closest": "article"
+          "closest": "article",
+          "collapse": true
         }
       ]
     }
