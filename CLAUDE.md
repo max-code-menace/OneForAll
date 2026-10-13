@@ -326,6 +326,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   - Sources (copies locales seulement pendant la session) : Kalbra/NoReel PR #51, SHADOWDANCH/instagram-noslop,
     InfectedDuck/ReelLess, Guillaume351/No-Reel-For-Instagram-Safari, blobspire/insta-filter, AtleyMa/focus,
     LukasWestholt/instagram-distraction-free-js, AyushUnleashed/unleash-focus, lpedenon/no-brainrot, gerwld/igplus.
+- **Tuto plus fluide** (demande de l'utilisateur, 13/10, pas encore buildé ; vu seulement en version web, Chromium) :
+  `TourOverlay` (Tour.tsx) reste affiché du début à la fin. Ouverture : voile en fondu + trou qui se resserre
+  (60 pt), point qui apparaît en rebond. « Suivant » : bulle effacée (160 ms), trou et point glissent vers
+  l'élément suivant (460 ms, courbe PUSH ; trou animé sans pilote natif car sa taille change), puis bulle qui
+  réapparaît. Fin (« Compris », « Passer ») : tout s'efface avant de fermer. Petite vibration sur « Suivant »
+  (réglage Vibrations). Geste mimé : le point s'efface avant de revenir au départ (plus de saut).
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
   à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
