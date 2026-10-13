@@ -283,8 +283,9 @@ const RUNTIME = `
     var expected = location.href;
     setTimeout(function () {
       watch.disconnect();
-      // Rechargement seulement si on est toujours sur cette adresse (l'utilisateur a pu repartir).
-      if (!reacted && location.href === expected) {
+      // Rechargement seulement si on est toujours sur cette adresse (l'utilisateur a pu repartir),
+      // et pas en boucle (un site qui remettrait lui-même l'ancienne adresse après chaque chargement).
+      if (!reacted && location.href === expected && reloadAllowed()) {
         leaving = true;
         post({ type: 'reloading', why: 'stuck' });
         location.reload();
@@ -292,9 +293,23 @@ const RUNTIME = `
     }, 800);
   }
 
-  // Vrai chargement de la page, voulu par la règle (champ « reload ») : quand le site ne suit
-  // pas une navigation douce. Ex. Instagram : l'adresse passe bien à « ?variant=following »,
-  // mais le fil affiché reste « Pour vous » (constaté sur iPhone, 13/10).
+  // Au plus 2 rechargements automatiques en 10 s (gardé pour la durée de l'onglet).
+  function reloadAllowed() {
+    var now = Date.now(), log = [];
+    try { log = JSON.parse(sessionStorage.getItem('__sansReelsReloads') || '[]'); } catch (e) {}
+    if (!Array.isArray(log)) log = [];
+    log = log.filter(function (t) { return typeof t === 'number' && now - t < 10000; });
+    if (log.length >= 2) return false;
+    log.push(now);
+    try { sessionStorage.setItem('__sansReelsReloads', JSON.stringify(log)); } catch (e) {}
+    return true;
+  }
+
+  // Vrai chargement de la page, voulu par la règle (champ « reload »), au TOUCHER d'un lien
+  // seulement : quand le site ne suit pas une navigation douce. Ex. Instagram : l'adresse passait
+  // bien à « ?variant=following », mais le fil affiché restait « Pour vous » (iPhone, 13/10).
+  // Jamais quand c'est le site qui change de page tout seul (ex. retour au fil après
+  // « Partager ») : un rechargement couperait ce qu'il est en train de faire (envoi…).
   function hardGo(target, replace) {
     leaving = true;
     post({ type: 'reloading', why: 'rule' }); // compteur du mode diagnostic
@@ -308,8 +323,7 @@ const RUNTIME = `
     if (!a) return false;
     if (a.block) { blockPage(a.label); return true; }
     if (!a.silent) post({ type: 'redirected', label: a.label });
-    if (a.reload) hardGo(a.target, true);
-    else softGo(a.target, true);
+    softGo(a.target, true); // « reload » : seulement au toucher d'un lien (voir hardGo)
     return true;
   }
 
@@ -357,12 +371,20 @@ const RUNTIME = `
     return t;
   }
 
+  // Le « display » que le site avait mis lui-même est gardé, pour le remettre au réaffichage.
+  var hiddenTotal = 0; // publications masquées depuis le chargement (carte de fin)
   function hideEl(el, attr) {
+    if (!el.__sansReelsDisplay) {
+      el.__sansReelsDisplay = [el.style.getPropertyValue('display'), el.style.getPropertyPriority('display')];
+    }
     el.style.setProperty('display', 'none', 'important');
     el.setAttribute(attr, 'hidden');
   }
   function showEl(el, attr) {
-    el.style.removeProperty('display');
+    var d = el.__sansReelsDisplay;
+    el.__sansReelsDisplay = null;
+    if (d && d[0]) el.style.setProperty('display', d[0], d[1]);
+    else el.style.removeProperty('display');
     el.removeAttribute(attr);
   }
 
@@ -396,17 +418,41 @@ const RUNTIME = `
   // Instagram réutilise les mêmes <article> pour d'autres publications pendant le défilement :
   // une case masquée (un Reel) peut devenir une photo. Quand le contenu d'un élément masqué
   // change, on revérifie ; si plus aucune règle ne le vise, il est réaffiché. Seulement s'il a
-  // du contenu (au moins un lien) : une case vidée avant d'être remplie n'est pas une photo.
-  function recheck(roots) {
-    var done = [];
-    for (var i = 0; i < roots.length; i++) {
-      var t = roots[i].closest('[data-sans-reels="hidden"]');
-      if (!t || done.indexOf(t) >= 0) continue;
-      done.push(t);
-      if (!t.getElementsByTagName('a').length || stillMatches(t)) continue;
+  // du contenu (au moins un lien, lui compris) : une case vidée avant d'être remplie n'est pas
+  // une photo. Une case (rowOf/cellOf) qui ne contient plus l'élément masqué pour lequel elle
+  // l'a été est réaffichée ; la boucle de masquage qui suit la remasque si son nouveau contenu
+  // est visé.
+  var HIDDEN_SEL = '[data-sans-reels="hidden"],[data-sans-reels-row="hidden"]';
+  var checkStamp = 0;
+  function recheckAll(list) {
+    checkStamp++;
+    for (var i = 0; i < list.length; i++) {
+      var t = list[i];
+      if (t.__sansReelsChecked === checkStamp) continue;
+      t.__sansReelsChecked = checkStamp;
+      if (t.getAttribute('data-sans-reels') !== 'hidden') {
+        var of = t.__sansReelsOf;
+        if (!of || !t.contains(of) || of.getAttribute('data-sans-reels') !== 'hidden') showEl(t, 'data-sans-reels-row');
+        continue;
+      }
+      var links = (t.tagName === 'A' ? 1 : 0) + t.getElementsByTagName('a').length;
+      if (!links || stillMatches(t)) continue;
       showEl(t, 'data-sans-reels');
-      if (t.__sansReelsBox) { showEl(t.__sansReelsBox, 'data-sans-reels-row'); t.__sansReelsBox = null; }
+      var box = t.__sansReelsBox;
+      t.__sansReelsBox = null;
+      if (box && box.getAttribute('data-sans-reels-row') === 'hidden') showEl(box, 'data-sans-reels-row');
     }
+  }
+  // Morceaux changés : les éléments masqués qui les contiennent, et ceux qu'ils contiennent.
+  function recheck(roots) {
+    var list = [];
+    for (var i = 0; i < roots.length; i++) {
+      var up = roots[i].closest(HIDDEN_SEL);
+      if (up) list.push(up);
+      var down = roots[i].querySelectorAll(HIDDEN_SEL);
+      for (var j = 0; j < down.length; j++) list.push(down[j]);
+    }
+    if (list.length) recheckAll(list);
   }
 
   // Éléments qui correspondent au sélecteur : dans toute la page (roots = null), ou
@@ -452,7 +498,9 @@ const RUNTIME = `
   // l'observateur les aurait signalés et ils auraient été relus aussitôt.
   function clean(roots, deep) {
     addStyle();
+    // Relecture de toute la page : tous les éléments masqués (peu nombreux) sont revérifiés.
     if (roots) recheck(roots);
+    else recheckAll(document.querySelectorAll(HIDDEN_SEL));
     var skipSeen = !roots && !deep;
     for (var i = 0; i < hideSels.length; i++) {
       var rules = hideBySel[hideSels[i]], list;
@@ -473,10 +521,15 @@ const RUNTIME = `
           var target = (r.closest && el.closest(r.closest)) || el;
           if (target.getAttribute('data-sans-reels') === 'hidden') continue;
           hideEl(target, 'data-sans-reels');
+          hiddenTotal++;
           // Publication entière masquée : on masque aussi la case qui ne contenait qu'elle,
           // sinon le site garde sa place et laisse un grand espace vide dans le fil.
           var box = r.closest ? rowOf(target) : r.cell ? cellOf(target) : target;
-          if (box !== target) { hideEl(box, 'data-sans-reels-row'); target.__sansReelsBox = box; }
+          if (box !== target) {
+            hideEl(box, 'data-sans-reels-row');
+            target.__sansReelsBox = box;
+            box.__sansReelsOf = target;
+          }
         }
       }
     }
@@ -618,10 +671,12 @@ const RUNTIME = `
   var MAX_PENDING = 400;
   var queued = false, timerId = 0, pending = [], pendingAll = false;
   function onMutations(list) {
+    var removed = false;
     if (!pendingAll) {
       for (var i = 0; i < list.length; i++) {
         var m = list[i];
         if (m.type === 'childList') {
+          if (m.removedNodes.length) removed = true;
           var added = m.addedNodes;
           for (var j = 0; j < added.length; j++) {
             // Texte ajouté : c'est son élément parent qui a changé (jamais le document lui-même).
@@ -636,6 +691,9 @@ const RUNTIME = `
       }
       if (pending.length > MAX_PENDING) { pendingAll = true; pending = []; }
     }
+    // Quelque chose a seulement été retiré (fenêtre fermée, publication démontée) : rien à
+    // masquer, mais la mise en page a changé (fin du fil, vidéos) : une mesure suffit.
+    if (removed) afterLayout(false);
     if (queued || (!pending.length && !pendingAll)) return;
     queued = true;
     needFrame();
@@ -684,6 +742,11 @@ const RUNTIME = `
     var a = e.target && e.target.closest && e.target.closest('a[href]');
     if (!a || a.host !== location.host) return;
     var rewritten = a.getAttribute('data-sans-reels-href');
+    // Le site a pu réutiliser ce lien pour une autre adresse depuis : la réécriture ne vaut plus.
+    if (rewritten && a.getAttribute('href') !== rewritten) {
+      a.removeAttribute('data-sans-reels-href');
+      rewritten = null;
+    }
     var action = rewritten ? { target: rewritten, reload: !!reloadHref[rewritten] } : urlAction(a.pathname, a.search);
     if (!action || (action.target && !safeTarget(action.target))) return;
     e.preventDefault();
@@ -813,18 +876,20 @@ const RUNTIME = `
   // montrer mais se charge sans fin. Le fil d'Instagram est VIRTUALISÉ : seules les
   // publications proches de l'écran sont dans la page, il faut donc juger d'après ce qui
   // est monté et d'après l'écran, pas d'après un compte de toute la liste. Deux cas :
-  //  - « fin » : au moins END_MIN publications masquées après la dernière visible, et on ne
-  //    peut plus descendre (bas de page) ou la dernière visible est déjà passée ;
+  //  - « fin » : bas RÉEL de la page atteint, avec au moins END_MIN publications masquées
+  //    après la dernière visible. Comme la suite peut être en train de charger (réseau lent),
+  //    il faut en plus une preuve : une nouvelle page est arrivée et tout y a été masqué, ou
+  //    plus rien n'arrive depuis END_QUIET ;
   //  - « vide » : on a défilé, aucune publication visible n'est à l'écran, seulement des
   //    masquées (si Instagram leur garde encore une place).
-  // Aucune carte si une vraie publication arrive plus bas. Il faut que l'état dure END_DELAY
-  // (pas de carte qui clignote pendant un chargement). La carte est un bandeau compact posé
-  // PAR-DESSUS la page (dans <body>, hors du contenu géré par le site), au-dessus de la
-  // barre d'onglets et à gauche du bouton rond de l'app ; elle disparaît quand on remonte.
+  // Aucune carte si une vraie publication arrive plus bas, ni pendant qu'une fenêtre d'Instagram
+  // est ouverte (menu, partage). L'état doit durer END_DELAY. La carte est un bandeau compact
+  // posé PAR-DESSUS la page (dans <body>, hors du contenu géré par le site), au-dessus de la
+  // barre d'onglets et à gauche du bouton rond de l'app ; seul son bouton reçoit les touchers.
   if (feedEnd) {
-    var END_MIN = 3, END_DELAY = 500;
-    var card = null, cardTitle = null, cardText = null;
-    var endState = '', endSince = 0, endTimer = null;
+    var END_MIN = 3, END_DELAY = 500, END_QUIET = 2500;
+    var card = null, cardTitle = null, cardText = null, shownState = '';
+    var endState = '', stateSince = 0, endSince = 0, endMark = 0, endTimer = null;
     var TEXTS = {
       end: ['✓ Tu as tout vu', 'Plus bas, il n’y a que des Reels et des contenus masqués par OneForAll.'],
       void: ['Ici, que des Reels masqués', 'OneForAll les a retirés du fil.'],
@@ -835,7 +900,7 @@ const RUNTIME = `
       c.id = 'sans-reels-feed-end';
       c.setAttribute('role', 'status');
       c.setAttribute('style',
-        'position:fixed;left:12px;right:68px;bottom:104px;z-index:2147483646;display:none;' +
+        'position:fixed;left:12px;right:68px;bottom:104px;z-index:2147483646;display:none;pointer-events:none;' +
         'align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:18px;' +
         'font-family:-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.22);' +
         (dark ? 'background:#211F1C;color:#F2EEE8;' : 'background:#FFFDFA;color:#1F1D1A;'));
@@ -850,7 +915,7 @@ const RUNTIME = `
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('style',
-        'flex:none;min-height:44px;padding:0 14px;border:0;border-radius:22px;font-size:15px;font-weight:600;' +
+        'flex:none;pointer-events:auto;min-height:44px;padding:0 14px;border:0;border-radius:22px;font-size:15px;font-weight:600;' +
         (dark ? 'background:#8FBFA9;color:#10201A;' : 'background:#3E6B5A;color:#FFFFFF;'));
       btn.textContent = 'Revenir en haut';
       btn.addEventListener('click', function () {
@@ -871,38 +936,53 @@ const RUNTIME = `
       if (location.pathname !== '/') return '';
       var arts = document.getElementsByTagName('article');
       if (!arts.length) return '';
-      var H = window.innerHeight, onScreen = false, hidden = 0, hiddenAfter = 0, lastBottom = null;
+      var H = window.innerHeight, onScreen = false, hidden = 0, hiddenAfter = 0;
       for (var i = 0; i < arts.length; i++) {
         if (isHidden(arts[i])) { hidden++; hiddenAfter++; continue; }
         hiddenAfter = 0;
         var r = arts[i].getBoundingClientRect();
         if (r.top >= H * 0.9) return ''; // une vraie publication arrive plus bas : pas la fin
         if (r.bottom > H * 0.1) onScreen = true;
-        lastBottom = r.bottom;
       }
-      if (!onScreen && hidden && window.scrollY > H * 0.5) return lastBottom === null && hiddenAfter < END_MIN ? '' : 'void';
-      if (hiddenAfter >= END_MIN) {
-        var doc = document.scrollingElement || document.documentElement;
-        if (window.scrollY + H >= doc.scrollHeight - 4 || lastBottom === null || lastBottom < H * 0.6) return 'end';
-      }
+      if (!onScreen && hidden && window.scrollY > H * 0.5) return 'void';
+      var doc = document.scrollingElement || document.documentElement;
+      if (hiddenAfter >= END_MIN && window.scrollY + H >= doc.scrollHeight - 4) return 'end';
       return '';
     };
+    // Une fenêtre d'Instagram est ouverte (menu « … », partage) : la carte s'efface le temps
+    // qu'elle reste ouverte, sans tout reprendre à zéro.
+    var dialogOpen = function () {
+      var dialogs = document.querySelectorAll('[role="dialog"]');
+      for (var d = 0; d < dialogs.length; d++) if (dialogs[d].getClientRects().length) return true;
+      return false;
+    };
     checkFeedEnd = function () {
-      var state = feedState();
-      if (state !== endState) { endState = state; endSince = Date.now(); }
-      var show = !!state && Date.now() - endSince >= END_DELAY;
-      // État pas encore assez durable : on revient voir à la fin du délai (même sans défilement).
-      if (state && !show && !endTimer) {
-        endTimer = setTimeout(function () { endTimer = null; endDue = true; needFrame(); }, END_DELAY - (Date.now() - endSince) + 20);
+      var now = Date.now(), state = feedState();
+      if (!state) stateSince = 0;
+      else if (!endState) stateSince = now;
+      if (state === 'end' && endState !== 'end') { endSince = now; endMark = hiddenTotal; }
+      endState = state;
+      var ok = !!state && now - stateSince >= END_DELAY &&
+        (state !== 'end' || hiddenTotal > endMark || now - endSince >= END_QUIET);
+      // Pas encore prouvé : la carte déjà affichée reste telle quelle (pas de clignotement),
+      // et on revient voir quand le délai sera passé, même sans défilement.
+      var shown = ok ? state : state && shownState ? shownState : '';
+      if (shown && dialogOpen()) shown = '';
+      if (state && !ok && !endTimer) {
+        var at = state === 'end' ? Math.max(stateSince + END_DELAY, endSince + END_QUIET) : stateSince + END_DELAY;
+        endTimer = setTimeout(function () { endTimer = null; endDue = true; needFrame(); }, Math.max(0, at - now) + 20);
       }
-      if (show && !card && document.body) card = buildCard();
+      if (shown && !card && document.body) card = buildCard();
       if (card && !card.isConnected && document.body) document.body.appendChild(card);
-      if (!card) return;
-      if (show) {
-        cardTitle.textContent = TEXTS[state][0];
-        cardText.textContent = TEXTS[state][1];
+      if (!card || shown === shownState) return;
+      // Textes écrits seulement quand l'état change : les réécrire à chaque mesure faisait des
+      // changements dans la page, donc de nouvelles mesures, sans fin.
+      if (shown) {
+        cardTitle.textContent = TEXTS[shown][0];
+        cardText.textContent = TEXTS[shown][1];
       }
-      card.style.display = show ? 'flex' : 'none';
+      card.style.display = shown ? 'flex' : 'none';
+      shownState = shown;
     };
     // Défilement (de la page ou d'un conteneur) : vérifié au plus une fois par image, sans
     // freiner, après le masquage de cette image (voir onFrame).

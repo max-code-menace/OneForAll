@@ -16,6 +16,7 @@
  * Listes :
  *  fin    : 3 photos puis 40 Reels (rien après).
  *  mixte  : photo, 6 Reels, photo, 10 Reels, photo, 30 Reels.
+ *  debut  : 14 Reels, 2 photos, 30 Reels (la 1re page ne contient que des Reels).
  *  infini : 3 photos puis des Reels « sans fin » (plafond 600), pour voir si le chargement s'emballe.
  *
  * 1er rendu 150 ms après DOMContentLoaded (comme React après ses scripts) ; option 'sync' : pendant la
@@ -29,7 +30,7 @@
  * les hauteurs en cache du virtualiseur.
  * overflow-anchor:none : pas d'ancrage du défilement (Safari n'en fait pas non plus, supposé).
  */
-function feedPage(mode, listName, trig = 'dom', first = 'late') {
+function feedPage(mode, listName, trig = 'dom', first = 'late', delay = 300) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
@@ -53,12 +54,13 @@ nav>div{flex:1;display:flex;align-items:center;justify-content:center}
 <script>
 (function(){
 var MODE = ${JSON.stringify(mode)}, LIST = ${JSON.stringify(listName)}, TRIG = ${JSON.stringify(trig)}, FIRST = ${JSON.stringify(first)};
-var EST = 600, OVERSCAN = 1000, LOAD_AHEAD = 1500, PAGE = 12, DELAY = 300;
+var EST = 600, OVERSCAN = 1000, LOAD_AHEAD = 1500, PAGE = 12, DELAY = ${Number(delay)};
 var DATA_H = { photo: 586, reel: 684 }; // V4 : hauteur « calculée » depuis le format du média
 var data = [];
 function add(kind, n){ for (var i=0;i<n;i++) data.push({ id: (kind==='photo'?'P':'R') + data.length, kind: kind }); }
 if (LIST === 'fin') { add('photo',3); add('reel',40); }
 else if (LIST === 'mixte') { add('photo',1); add('reel',6); add('photo',1); add('reel',10); add('photo',1); add('reel',30); }
+else if (LIST === 'debut') { add('reel',14); add('photo',2); add('reel',30); }
 else { add('photo',3); add('reel',597); }
 var lastPhotoId = null; data.forEach(function(d){ if (d.kind==='photo') lastPhotoId = d.id; });
 

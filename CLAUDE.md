@@ -228,18 +228,36 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
        validateurs. Coût mesuré : style −9 à −11 % (le contenu d'un Reel n'est plus calculé du tout).
        ⚠️ Effet secondaire possible : le bas du fil restant proche, Instagram peut charger page après page sans
        arrêt (faux fil sans fin : 9-10 chargements en 3 s immobile). À surveiller : chaleur, data.
-    2. Moteur : `recheck()` réaffiche un élément masqué dont le contenu a changé quand plus aucune règle ne le vise
-       et qu'il contient au moins un lien (une case vidée avant d'être remplie reste masquée).
-    3. Carte de fin réécrite (`feedState`) : l'ancienne condition (≥ 12 masquées après la dernière visible) ne
-       s'affichait JAMAIS sur un fil virtualisé (0 sur 57 essais). États « fin » (≥ 3 masquées après la dernière
-       visible et bas de page atteint ou dernière visible passée) et « vide » (défilé, rien de visible à l'écran) ;
-       doit durer 0,5 s ; bandeau compact en bas (au-dessus de la barre d'onglets, à gauche du bouton rond).
+    2. Moteur : `recheck()`/`recheckAll()` réaffichent un élément masqué dont le contenu a changé quand plus aucune
+       règle ne le vise et qu'il contient au moins un lien (lui compris : vignettes de profil) ; une case vidée avant
+       d'être remplie reste masquée. Aussi : case (rowOf/cellOf) dont l'élément masqué a été remplacé, éléments
+       masqués DANS un morceau changé, et tous les masqués lors d'une relecture complète. `showEl` remet le
+       `display` que le site avait mis.
+    3. Carte de fin réécrite (`feedState`/`checkFeedEnd`) : l'ancienne condition (≥ 12 masquées après la dernière
+       visible) ne s'affichait JAMAIS sur un fil virtualisé (0 sur 57 essais). État « fin » : bas RÉEL de la page et
+       ≥ 3 masquées après la dernière visible, PLUS une preuve que la suite n'apporte rien (une nouvelle page arrivée
+       et entièrement masquée, `hiddenTotal`, ou 2,5 s sans rien) : sinon, réseau lent = fausse fin (relecture).
+       État « vide » : défilé, rien de visible à l'écran (0,5 s). Bandeau compact en bas (au-dessus de la barre
+       d'onglets, à gauche du bouton rond), seul son bouton reçoit les touchers, effacé pendant qu'une fenêtre
+       `[role="dialog"]` d'Instagram est ouverte ; textes écrits seulement quand l'état change (sinon boucle).
     4. **« Pour vous » au lieu d'Abonnements** : la navigation douce (`softGo`) changeait l'adresse en
        `?variant=following` sans changer le fil (hypothèse forte, cohérente avec la capture ; les autres outils —
        noslop, IG-Clean, IGPlus — font tous un vrai chargement). Nouveau champ de règle `reload` (vrai chargement,
        ignoré par les anciens builds) sur ig.followingFeed + lien `a[href="/"]` réécrit vers `/?variant=following`.
+       `reload` ne joue qu'au TOUCHER d'un lien (Accueil, logo) : quand Instagram change lui-même de page vers « / »
+       (ex. après « Partager »), navigation douce comme avant, car un rechargement couperait un envoi (relecture).
        Conséquence : toucher Accueil depuis une autre page recharge le fil (1-2 s) ; déjà sur le fil : remonte en haut.
-       Compteur Diagnostic : cause « redirection OneForAll ».
+       Compteur Diagnostic : cause « redirection OneForAll ». Garde-fou : au plus 2 rechargements automatiques
+       (navigation douce ratée) en 10 s (`reloadAllowed`, sessionStorage). Un lien réécrit que le site réutilise pour
+       une autre adresse n'est plus intercepté. « Favoris » / « Pour vous » choisis dans le menu d'Instagram : adresse
+       ramenée à following par navigation douce, sans rechargement (le fil choisi reste sans doute affiché).
+  - Relecture adverse (9 agents, 13/10) : défauts confirmés et corrigés ci-dessus (fausse fin pendant un chargement,
+    rechargement pendant un envoi, cases réutilisées, boucle de la carte, touchers captés, lien réutilisé, phrase
+    fausse « Toucher Accueil recharge le fil » retirée des Réglages). Non vérifiés, à surveiller sur iPhone : si
+    Instagram charge la suite par un IntersectionObserver, des Reels à 0 px pourraient BLOQUER le chargement (fil qui
+    s'arrête alors que des photos existent) ; à l'inverse, un fil sans fin de Reels peut charger sans arrêt. Les
+    anciens builds (≤ 6) reçoivent aussi le CSS (pas de frein à ce chargement) ; ils interceptaient déjà le lien
+    Accueil (comportement inchangé).
   - Pistes non faites : remplacer `display:none` par une boîte de 0 px mesurable (NoReel, No-Reel Safari, ReelLess
     le font pour ne pas dérégler le chargement d'Instagram ; risque : publication de 0 px « visible » pour Instagram,
     lecture auto, adresse qui passe à /reel/) ; supprimer l'espaceur `div:has(> article){padding-bottom:0}`

@@ -71,9 +71,10 @@ export type Rule = {
   /** Redirection sans bandeau (ex. fil « Abonnements » : à chaque retour à l'accueil). */
   silent?: boolean;
   /**
-   * Redirections de cette règle par un VRAI chargement de la page, pas une navigation douce :
-   * pour un site qui change bien d'adresse mais pas de contenu (Instagram : « ?variant=following »
-   * affichait encore « Pour vous »). Aussi pour les liens réécrits par cette règle.
+   * Quand on TOUCHE un lien visé par cette règle (ou réécrit par elle) : vrai chargement de la
+   * page, pas une navigation douce. Pour un site qui change bien d'adresse mais pas de contenu
+   * (Instagram : « ?variant=following » affichait encore « Pour vous »). Quand c'est le site qui
+   * change de page tout seul, toujours la navigation douce (un rechargement couperait un envoi).
    * Ignoré sans risque par les anciennes versions (elles font une navigation douce).
    */
   reload?: boolean;
