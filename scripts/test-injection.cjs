@@ -149,6 +149,7 @@ function validationTests() {
   bad('regex qui peut tourner sans fin (2)', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(?:.*)*x$'));
   bad('référence arrière', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsRedirect').urls[0].pattern = '^/(a)\\1$'));
   bad('silent pas vrai/faux', 'instagram', (r) => (r.rules[0].silent = 'oui'));
+  bad('reload pas vrai/faux', 'instagram', (r) => (r.rules[0].reload = 'oui'));
   bad('cell pas vrai/faux', 'instagram', (r) => (r.rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell = 'oui'));
   assert.equal(base('instagram').rules.find((x) => x.id === 'ig.reelsTab').hide[0].cell, true);
   // Les redirections du dépôt ($1 compris) restent acceptées.
@@ -478,13 +479,127 @@ async function browserTests() {
   });
   assert.equal(await cardShown(), false, 'pas de carte tant qu’on voit encore des photos');
   await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await page.waitForTimeout(200);
+  await page.waitForTimeout(150);
+  assert.equal(await cardShown(), false, 'pas de carte tout de suite (elle attend 0,5 s, pas de clignotement)');
+  await page.waitForTimeout(600);
   assert.equal(await cardShown(), true, '« Tu as tout vu » après la dernière photo');
   assert.match(await page.textContent('#sans-reels-feed-end'), /Tu as tout vu/);
   await page.click('#sans-reels-feed-end button');
   await page.waitForTimeout(800);
   assert.equal(await page.evaluate(() => window.scrollY), 0, '« Revenir en haut » remonte');
   assert.equal(await cardShown(), false, 'la carte disparaît en haut du fil');
+  await page.close();
+
+  // --- Fil VIRTUALISÉ (comme Instagram) : un Reel masqué ne doit pas garder sa place ---
+  // Faux fils de scripts/fake-feed.cjs : le site mesure chaque publication dès qu'il l'ajoute
+  // (avant le script) et réserve cette place quand elle sort de l'écran (V1 : espaceurs,
+  // V2 : positions absolues). 3 photos séparées par des séries de Reels (6, 10, puis 30).
+  const { feedPage } = require('./fake-feed.cjs');
+  const withoutFeedCss = PLATFORMS.map((p) =>
+    p.id !== 'instagram' ? p : { ...p, rules: p.rules.map((r) => (r.id === 'ig.feedReels' ? { ...r, css: undefined } : r)) },
+  );
+  async function virtualFeed(platforms, mode, list) {
+    const p = await browser.newPage({ viewport: { width: 390, height: 760 } });
+    await p.route('**/*', (route) => route.fulfill({ contentType: 'text/html; charset=utf-8', body: feedPage(mode, list) }));
+    await p.addInitScript(() => { window.ReactNativeWebView = { postMessage() {} }; });
+    await p.addInitScript(buildInjectedScript(platforms, noFollow));
+    await p.goto('https://www.instagram.com/');
+    await p.waitForTimeout(600);
+    // Comme l'utilisateur : descendre jusqu'en bas, plusieurs fois, en laissant charger.
+    for (let i = 0, prev = -1, stable = 0; i < 40 && stable < 2; i++) {
+      await p.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+      await p.waitForTimeout(400);
+      const [h, st] = await p.evaluate(() => [document.documentElement.scrollHeight, window.__feed.stats()]);
+      stable = h === prev && st.loaded >= st.total ? stable + 1 : 0;
+      prev = h;
+    }
+    return p;
+  }
+  // Balayage de haut en bas : quelles publications visibles passent à l'écran, et combien
+  // d'écrans sans aucune publication visible (le « vide ») ?
+  async function sweep(p) {
+    const seen = new Set();
+    let empty = 0;
+    for (let y = 0; ; y += 300) {
+      const r = await p.evaluate(async (y) => {
+        window.scrollTo(0, y);
+        await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+        const H = innerHeight;
+        const on = [...document.getElementsByTagName('article')]
+          .filter((a) => a.getClientRects().length && a.getAttribute('data-sans-reels') !== 'hidden')
+          .filter((a) => { const b = a.getBoundingClientRect(); return b.bottom > 44 && b.top < H - 50; })
+          .map((a) => a.getAttribute('data-id'));
+        return { on, y: scrollY, max: document.documentElement.scrollHeight - H };
+      }, y);
+      r.on.forEach((id) => seen.add(id));
+      if (!r.on.length) empty++;
+      if (r.y >= r.max - 1) break;
+    }
+    return { seen: [...seen].sort(), empty };
+  }
+  for (const mode of ['V1', 'V2']) {
+    // Témoin : sans le CSS de ig.feedReels, le faux fil reproduit bien le vide de l'iPhone.
+    page = await virtualFeed(withoutFeedCss, mode, 'fin');
+    const witness = await page.evaluate(() => document.documentElement.scrollHeight);
+    assert.ok(witness > 10000, `${mode} témoin : grand vide sans le CSS (${witness} px)`);
+    await page.close();
+    // Avec les règles : le fil s'arrête sous la dernière photo, et les photos qui suivent
+    // une série de Reels apparaissent bien (sans le CSS, elles restaient hors de l'écran en V1).
+    page = await virtualFeed(PLATFORMS, mode, 'mixte');
+    const sw = await sweep(page);
+    assert.deepEqual(sw.seen, ['P0', 'P18', 'P7'], `${mode} : les 3 photos passent à l'écran (${sw.seen})`);
+    assert.ok(sw.empty <= 1, `${mode} : pas de vide dans le fil (${sw.empty} écrans vides)`);
+    const h = await page.evaluate(() => document.documentElement.scrollHeight);
+    assert.ok(h < 3500, `${mode} : la page s'arrête après la dernière photo (${h} px)`);
+    // En bas : la carte de fin (sur un fil virtualisé, l'ancienne condition ne la montrait jamais).
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.waitForTimeout(800);
+    assert.match(
+      await page.evaluate(() => { const c = document.getElementById('sans-reels-feed-end'); return c && getComputedStyle(c).display !== 'none' ? c.textContent : ''; }),
+      /Tu as tout vu/,
+      `${mode} : « Tu as tout vu » en bas du fil`,
+    );
+    await page.close();
+  }
+  // Si Instagram gardait quand même une place (hauteurs tirées de ses données, V4) : au milieu
+  // du vide, une carte le dit, avec « Revenir en haut ».
+  page = await virtualFeed(PLATFORMS, 'V4', 'fin');
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight / 2));
+  await page.waitForTimeout(800);
+  assert.match(
+    await page.evaluate(() => { const c = document.getElementById('sans-reels-feed-end'); return c && getComputedStyle(c).display !== 'none' ? c.textContent : ''; }),
+    /que des Reels masqués/,
+    'V4 : carte dans le vide',
+  );
+  await page.close();
+
+  // --- Publication RÉUTILISÉE par Instagram (même <article>, autre contenu) ---
+  page = await open('https://www.instagram.com/p/AAA/');
+  await page.evaluate(() => {
+    document.body.insertAdjacentHTML('beforeend',
+      '<article id="recy"><a href="/u/">u</a><a href="/reel/R1/">reel</a></article>' +
+      '<article id="recyAd"><a href="/u2/">u2</a><span>Sponsorisé</span></article>');
+  });
+  await page.waitForTimeout(150);
+  assert.equal(await hidden(page, '#recy'), true, 'Reel masqué');
+  assert.equal(await hidden(page, '#recyAd'), true, 'pub masquée');
+  // Vidée avant d'être remplie : pas encore une photo, elle reste masquée (pas de clignotement).
+  assert.equal(await atNextFrame(page, `document.getElementById('recy').innerHTML = '';`, '#recy'), true, 'case vidée : reste masquée');
+  assert.equal(
+    await atNextFrame(page, `document.getElementById('recy').innerHTML = '<a href="/u/">u</a><a href="/p/P9/">photo</a>';`, '#recy'),
+    false,
+    'case devenue une photo : réaffichée',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.getElementById('recy').innerHTML = '<a href="/u/">u</a><a href="/reel/R2/">reel</a>';`, '#recy'),
+    true,
+    'redevenue un Reel : masquée de nouveau',
+  );
+  assert.equal(
+    await atNextFrame(page, `document.querySelector('#recyAd span').firstChild.nodeValue = 'Paris';`, '#recyAd'),
+    false,
+    'pub devenue une publication normale : réaffichée',
+  );
   await page.close();
 
   // Règles désactivées => rien n'est masqué.
@@ -619,11 +734,18 @@ async function browserTests() {
   await spa.p.waitForTimeout(300);
   assert.equal(await spa.p.evaluate(() => history.length), before, 'déjà sur la recherche : la page n’est pas empilée');
   assert.equal(pathOf(spa.p), '/explore/search/', 'toujours sur la recherche');
+  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
+  // Accueil -> fil Abonnements : un VRAI chargement, directement à la bonne adresse (sur le vrai
+  // Instagram, la navigation douce changeait l'adresse mais le fil restait « Pour vous »).
   await spa.p.click('#homeLink');
   await spa.p.waitForTimeout(1000);
   assert.equal(pathOf(spa.p), '/?variant=following', 'Accueil -> fil Abonnements');
-  assert.equal(spa.loads(), 1, 'fil Abonnements sans recharger la page');
-  assert.equal(spa.sent.some((m) => m.type === 'reloading'), false, 'aucun rechargement signalé');
+  assert.equal(spa.loads(), 2, 'fil Abonnements : un seul chargement de page');
+  assert.deepEqual(spa.sent.filter((m) => m.type === 'reloading'), [{ type: 'reloading', why: 'rule' }], 'rechargement voulu, signalé');
+  // Déjà sur le fil Abonnements : Accueil remonte en haut, sans recharger.
+  await spa.p.click('#homeLink');
+  await spa.p.waitForTimeout(500);
+  assert.equal(spa.loads(), 2, 'Accueil sur le fil Abonnements : pas de rechargement');
   await spa.p.close();
   // Site sans routeur : au bout de 800 ms, on recharge à la bonne adresse (rien ne reste bloqué).
   spa = await openSpa(false);

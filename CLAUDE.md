@@ -75,6 +75,10 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   La vraie app utilise `runtimeVersion` = `version` (1.0.0), mises à jour coupées.
   Étapes pour l'utilisateur : (1) `eas device:create` ; (2) créer un jeton sur expo.dev (Account settings →
   Access tokens) et le coller dans GitHub (secret `EXPO_TOKEN`) ; (3) `eas build --platform ios --profile test`.
+  **Fait et utilisé par l'utilisateur (13/10)** : il teste les branches `claude/…` avec l'app de test.
+  Règles dans l'app de test : jusqu'au 13/10, elle téléchargeait celles de `main`, qui REMPLAÇAIENT celles de la
+  branche (une règle JSON modifiée n'arrivait pas avant fusion). Depuis : mise à jour des règles coupée par défaut
+  dans l'app de test (`IS_TEST_APP` dans rules.tsx, réactivable dans ses Réglages) ; la vraie app ne change pas.
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
@@ -207,8 +211,44 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     (`play`) et 1 fois/s s'il y a des vidéos.
   - Loupe touchée alors qu'on est déjà sur la recherche : remonte en haut au lieu d'empiler la page (2 retours).
   - Corrigé en passant : la regex « fond transparent » de `reportTheme` était cassée (barres obliques du gabarit).
-  - Non fait (incertain sans le vrai site) : réécrire le lien Accueil vers `/?variant=following` (éviterait un
-    double chargement du fil, mais dépend de la réaction du routeur d'Instagram à un popstate « poussé »).
+  - Retour de l'utilisateur (app de test, 13/10) : « je sens une amélioration ».
+- **Fil : grand vide sous la dernière photo** (captures de l'utilisateur, app de test, 13/10 : après la dernière
+  photo, du blanc sur une très longue page, sans carte « Tu as tout vu » ; en-tête « Pour vous ⌄ »). Analyse par
+  agents (recherche sur GitHub + faux fils virtualisés `scripts/fake-feed.cjs`) :
+  - Cause (établie par plusieurs projets indépendants de 2026, dont NoReel, une WebView Android comme nous ; jamais
+    observée directement sur le vrai site) : le fil d'Instagram est **virtualisé**. Seules les publications proches
+    de l'écran sont dans la page, et il réserve la place des autres d'après leur hauteur mesurée. Le script masquait
+    les Reels APRÈS cette mesure (useLayoutEffect) : leur place restait, d'où le vide. Les `<article>` sont aussi
+    **réutilisés** pour d'autres publications pendant le défilement.
+  - Correctifs (non buildés ; testés sur faux fils Chromium seulement) :
+    1. CSS `article:has(a[href*="/reel/"]) { display: none !important; }` dans ig.feedReels : masqué dès le 1er
+       calcul, avant la mesure. Faux fils V1 (espaceurs) et V2 (positions absolues) : vide de 23 000 à 29 700 px
+       ramené à 0 ; en V1, les photos qui suivent une série de Reels redeviennent visibles. Sans effet si Instagram
+       tire les hauteurs de ses données (V4) : alors seule la carte « vide » aide. Accepté par tous les anciens
+       validateurs. Coût mesuré : style −9 à −11 % (le contenu d'un Reel n'est plus calculé du tout).
+       ⚠️ Effet secondaire possible : le bas du fil restant proche, Instagram peut charger page après page sans
+       arrêt (faux fil sans fin : 9-10 chargements en 3 s immobile). À surveiller : chaleur, data.
+    2. Moteur : `recheck()` réaffiche un élément masqué dont le contenu a changé quand plus aucune règle ne le vise
+       et qu'il contient au moins un lien (une case vidée avant d'être remplie reste masquée).
+    3. Carte de fin réécrite (`feedState`) : l'ancienne condition (≥ 12 masquées après la dernière visible) ne
+       s'affichait JAMAIS sur un fil virtualisé (0 sur 57 essais). États « fin » (≥ 3 masquées après la dernière
+       visible et bas de page atteint ou dernière visible passée) et « vide » (défilé, rien de visible à l'écran) ;
+       doit durer 0,5 s ; bandeau compact en bas (au-dessus de la barre d'onglets, à gauche du bouton rond).
+    4. **« Pour vous » au lieu d'Abonnements** : la navigation douce (`softGo`) changeait l'adresse en
+       `?variant=following` sans changer le fil (hypothèse forte, cohérente avec la capture ; les autres outils —
+       noslop, IG-Clean, IGPlus — font tous un vrai chargement). Nouveau champ de règle `reload` (vrai chargement,
+       ignoré par les anciens builds) sur ig.followingFeed + lien `a[href="/"]` réécrit vers `/?variant=following`.
+       Conséquence : toucher Accueil depuis une autre page recharge le fil (1-2 s) ; déjà sur le fil : remonte en haut.
+       Compteur Diagnostic : cause « redirection OneForAll ».
+  - Pistes non faites : remplacer `display:none` par une boîte de 0 px mesurable (NoReel, No-Reel Safari, ReelLess
+    le font pour ne pas dérégler le chargement d'Instagram ; risque : publication de 0 px « visible » pour Instagram,
+    lecture auto, adresse qui passe à /reel/) ; supprimer l'espaceur `div:has(> article){padding-bottom:0}`
+    (unleash-focus, ordinateur) ; filtrer les données JSON avant React (IG-Clean ; champ « Reel » inconnu).
+  - Bandeau « Utiliser l'application » (visible sur les captures) : aucun sélecteur fiable connu ; les autres outils
+    cherchent le texte puis remontent à l'ancêtre `position: fixed` (6 niveaux). Non fait (non demandé).
+  - Sources (copies locales seulement pendant la session) : Kalbra/NoReel PR #51, SHADOWDANCH/instagram-noslop,
+    InfectedDuck/ReelLess, Guillaume351/No-Reel-For-Instagram-Safari, blobspire/insta-filter, AtleyMa/focus,
+    LukasWestholt/instagram-distraction-free-js, AyushUnleashed/unleash-focus, lpedenon/no-brainrot, gerwld/igplus.
 - Idées proposées, non demandées : masquer la bannière « Utiliser l'application » d'Instagram (captures demandées
   à l'utilisateur pour viser juste ; règle JSON compatible avec les anciens builds), masquer les publicités vidéo.
 - **Audit complet + corrections** (après le build 4, pas encore buildé ; testé seulement sur fausses pages Chromium) :
@@ -241,6 +281,8 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
    connexion YouTube (Google) et Facebook toujours dans l'app, liens externes dans Safari.
    Avec Fluidité 3 (même build, ou app de test) : élan du défilement d'Instagram (la page continue de glisser ?),
    aucun Reel visible même un instant dans le fil, barre d'onglets sans trou, Reel en DM toujours bloqué au glissement.
+   Fil (13/10, app de test) : plus de vide sous la dernière photo ? carte « Tu as tout vu » en bas ? en-tête
+   « Abonnements » (plus « Pour vous ») après Accueil ? aucune photo qui disparaît ? chaleur/data en bas du fil.
 1. Retours de test du build 5 (utilisateur et sa sœur) : tuto,
    Reel en DM bloqué, fil Abonnements, pubs masquées, pastille (endpoint Instagram non officiel), notifications,
    connexion Facebook (vérification robot : capture toujours demandée si ça bloque encore).

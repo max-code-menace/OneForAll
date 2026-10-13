@@ -27,13 +27,14 @@ import type { HideRule, Platform, RewriteLinkRule } from '../rules/types';
  * remplacement de $1, $2… (même logique que isSafeTarget, src/lib/urlRules.ts).
  */
 
-type InjectedUrlRule = { pattern: string; redirectTo: string | null; label: string; silent: boolean };
+type InjectedUrlRule = { pattern: string; redirectTo: string | null; label: string; silent: boolean; reload: boolean };
+type InjectedRewrite = RewriteLinkRule & { reload: boolean };
 
 type InjectedConfig = {
   hosts: string[];
   css: string;
   hide: HideRule[];
-  rewrite: RewriteLinkRule[];
+  rewrite: InjectedRewrite[];
   urls: InjectedUrlRule[];
   lockFeed: boolean;
   feedEnd: boolean;
@@ -49,8 +50,10 @@ export function buildConfig(
       hosts: p.hosts,
       css: rules.map((r) => r.css ?? '').join('\n'),
       hide: rules.flatMap((r) => r.hide ?? []),
-      rewrite: rules.flatMap((r) => r.rewriteLinks ?? []),
-      urls: rules.flatMap((r) => (r.urls ?? []).map((u) => ({ ...u, label: r.label, silent: !!r.silent }))),
+      rewrite: rules.flatMap((r) => (r.rewriteLinks ?? []).map((l) => ({ ...l, reload: !!r.reload }))),
+      urls: rules.flatMap((r) =>
+        (r.urls ?? []).map((u) => ({ ...u, label: r.label, silent: !!r.silent, reload: !!r.reload })),
+      ),
       lockFeed: rules.some((r) => r.lockVideoFeed),
       feedEnd: rules.some((r) => r.feedEnd),
     };
@@ -179,6 +182,10 @@ const RUNTIME = `
   // égal : on ne le normalise pas (légendes de plusieurs lignes…).
   var MAX_RAW = maxText * 2 + 16;
 
+  // Liens réécrits dont la règle demande un vrai chargement (champ « reload »).
+  var reloadHref = {};
+  for (var w = 0; w < rewrite.length; w++) if (rewrite[w].reload) reloadHref[rewrite[w].href] = true;
+
   // Expressions des règles d'URL préparées une seule fois (pas à chaque vérification).
   for (var u = 0; u < urls.length; u++) {
     try { urls[u].re = new RegExp(urls[u].pattern); } catch (e) { urls[u].re = null; }
@@ -210,7 +217,7 @@ const RUNTIME = `
       var target = path.replace(re, urls[i].redirectTo);
       if (!safeTarget(target) || alreadyThere(path, search, target)) continue;
       if (target.indexOf('?') < 0) target += search || '';
-      return { target: target, label: urls[i].label, silent: urls[i].silent };
+      return { target: target, label: urls[i].label, silent: urls[i].silent, reload: urls[i].reload };
     }
     return null;
   }
@@ -285,6 +292,15 @@ const RUNTIME = `
     }, 800);
   }
 
+  // Vrai chargement de la page, voulu par la règle (champ « reload ») : quand le site ne suit
+  // pas une navigation douce. Ex. Instagram : l'adresse passe bien à « ?variant=following »,
+  // mais le fil affiché reste « Pour vous » (constaté sur iPhone, 13/10).
+  function hardGo(target, replace) {
+    leaving = true;
+    post({ type: 'reloading', why: 'rule' }); // compteur du mode diagnostic
+    if (replace) location.replace(target); else location.assign(target);
+  }
+
   // Vérifie l'URL actuelle. Renvoie true si on quitte (ou change) la page.
   function checkUrl() {
     if (leaving) return true;
@@ -292,7 +308,8 @@ const RUNTIME = `
     if (!a) return false;
     if (a.block) { blockPage(a.label); return true; }
     if (!a.silent) post({ type: 'redirected', label: a.label });
-    softGo(a.target, true);
+    if (a.reload) hardGo(a.target, true);
+    else softGo(a.target, true);
     return true;
   }
 
@@ -344,6 +361,53 @@ const RUNTIME = `
     el.style.setProperty('display', 'none', 'important');
     el.setAttribute(attr, 'hidden');
   }
+  function showEl(el, attr) {
+    el.style.removeProperty('display');
+    el.removeAttribute(attr);
+  }
+
+  // Un élément masqué est-il encore visé par une règle ?
+  function stillMatches(target) {
+    for (var i = 0; i < hideSels.length; i++) {
+      var sel = hideSels[i], rules = hideBySel[sel], cands = [];
+      try {
+        if (target.matches(sel)) cands.push(target);
+        var sub = target.querySelectorAll(sel);
+        for (var j = 0; j < sub.length; j++) cands.push(sub[j]);
+      } catch (e) { continue; }
+      for (var c = 0; c < cands.length; c++) {
+        var el = cands[c], txt = null;
+        for (var q = 0; q < rules.length; q++) {
+          var r = rules[q];
+          if (r.text) {
+            if (txt === null) {
+              var raw = el.textContent || '';
+              txt = raw.length > MAX_RAW ? '' : norm(raw);
+            }
+            if (txt !== r.text) continue;
+          }
+          if (((r.closest && el.closest(r.closest)) || el) === target) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // Instagram réutilise les mêmes <article> pour d'autres publications pendant le défilement :
+  // une case masquée (un Reel) peut devenir une photo. Quand le contenu d'un élément masqué
+  // change, on revérifie ; si plus aucune règle ne le vise, il est réaffiché. Seulement s'il a
+  // du contenu (au moins un lien) : une case vidée avant d'être remplie n'est pas une photo.
+  function recheck(roots) {
+    var done = [];
+    for (var i = 0; i < roots.length; i++) {
+      var t = roots[i].closest('[data-sans-reels="hidden"]');
+      if (!t || done.indexOf(t) >= 0) continue;
+      done.push(t);
+      if (!t.getElementsByTagName('a').length || stillMatches(t)) continue;
+      showEl(t, 'data-sans-reels');
+      if (t.__sansReelsBox) { showEl(t.__sansReelsBox, 'data-sans-reels-row'); t.__sansReelsBox = null; }
+    }
+  }
 
   // Éléments qui correspondent au sélecteur : dans toute la page (roots = null), ou
   // seulement dans les morceaux qui viennent d'apparaître ou de changer (roots = liste
@@ -388,6 +452,7 @@ const RUNTIME = `
   // l'observateur les aurait signalés et ils auraient été relus aussitôt.
   function clean(roots, deep) {
     addStyle();
+    if (roots) recheck(roots);
     var skipSeen = !roots && !deep;
     for (var i = 0; i < hideSels.length; i++) {
       var rules = hideBySel[hideSels[i]], list;
@@ -411,7 +476,7 @@ const RUNTIME = `
           // Publication entière masquée : on masque aussi la case qui ne contenait qu'elle,
           // sinon le site garde sa place et laisse un grand espace vide dans le fil.
           var box = r.closest ? rowOf(target) : r.cell ? cellOf(target) : target;
-          if (box !== target) hideEl(box, 'data-sans-reels-row');
+          if (box !== target) { hideEl(box, 'data-sans-reels-row'); target.__sansReelsBox = box; }
         }
       }
     }
@@ -559,8 +624,9 @@ const RUNTIME = `
         if (m.type === 'childList') {
           var added = m.addedNodes;
           for (var j = 0; j < added.length; j++) {
-            // Texte ajouté : c'est son élément parent qui a changé.
-            pending.push(added[j].nodeType === 1 ? added[j] : m.target);
+            // Texte ajouté : c'est son élément parent qui a changé (jamais le document lui-même).
+            var node = added[j].nodeType === 1 ? added[j] : m.target;
+            if (node.nodeType === 1) pending.push(node);
           }
         } else if (m.type === 'characterData') {
           if (m.target.parentElement) pending.push(m.target.parentElement);
@@ -618,7 +684,7 @@ const RUNTIME = `
     var a = e.target && e.target.closest && e.target.closest('a[href]');
     if (!a || a.host !== location.host) return;
     var rewritten = a.getAttribute('data-sans-reels-href');
-    var action = rewritten ? { target: rewritten } : urlAction(a.pathname, a.search);
+    var action = rewritten ? { target: rewritten, reload: !!reloadHref[rewritten] } : urlAction(a.pathname, a.search);
     if (!action || (action.target && !safeTarget(action.target))) return;
     e.preventDefault();
     e.stopImmediatePropagation();
@@ -630,7 +696,8 @@ const RUNTIME = `
       return;
     }
     if (action.label && !action.silent) post({ type: 'redirected', label: action.label });
-    softGo(action.target, false);
+    if (action.reload) hardGo(action.target, false);
+    else softGo(action.target, false);
   }, true);
 
   // c) Contenu ajouté ou changé (scroll infini, changement d'onglet, texte mis à jour,
@@ -742,34 +809,48 @@ const RUNTIME = `
   }
 
   // --- 6. Fin du fil : « Tu as tout vu » ------------------------------------------
-  // Quand beaucoup de comptes suivis publient des Reels (masqués), le fil n'a plus
-  // rien à montrer mais se charge sans fin. Une fois la dernière publication visible
-  // passée, et s'il ne reste après elle que des publications masquées (au moins
-  // FEED_END_MIN), une carte l'indique. Elle est posée PAR-DESSUS la page (dans
-  // <body>, hors du contenu géré par le site), et disparaît quand on remonte.
+  // Quand beaucoup de comptes suivis publient des Reels (masqués), le fil n'a plus rien à
+  // montrer mais se charge sans fin. Le fil d'Instagram est VIRTUALISÉ : seules les
+  // publications proches de l'écran sont dans la page, il faut donc juger d'après ce qui
+  // est monté et d'après l'écran, pas d'après un compte de toute la liste. Deux cas :
+  //  - « fin » : au moins END_MIN publications masquées après la dernière visible, et on ne
+  //    peut plus descendre (bas de page) ou la dernière visible est déjà passée ;
+  //  - « vide » : on a défilé, aucune publication visible n'est à l'écran, seulement des
+  //    masquées (si Instagram leur garde encore une place).
+  // Aucune carte si une vraie publication arrive plus bas. Il faut que l'état dure END_DELAY
+  // (pas de carte qui clignote pendant un chargement). La carte est un bandeau compact posé
+  // PAR-DESSUS la page (dans <body>, hors du contenu géré par le site), au-dessus de la
+  // barre d'onglets et à gauche du bouton rond de l'app ; elle disparaît quand on remonte.
   if (feedEnd) {
-    var FEED_END_MIN = 12;
-    var card = null;
+    var END_MIN = 3, END_DELAY = 500;
+    var card = null, cardTitle = null, cardText = null;
+    var endState = '', endSince = 0, endTimer = null;
+    var TEXTS = {
+      end: ['✓ Tu as tout vu', 'Plus bas, il n’y a que des Reels et des contenus masqués par OneForAll.'],
+      void: ['Ici, que des Reels masqués', 'OneForAll les a retirés du fil.'],
+    };
     var buildCard = function () {
       var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
       var c = document.createElement('div');
       c.id = 'sans-reels-feed-end';
       c.setAttribute('role', 'status');
       c.setAttribute('style',
-        'position:fixed;left:24px;right:24px;bottom:28%;z-index:2147483646;display:none;' +
-        'flex-direction:column;align-items:center;gap:8px;padding:20px;border-radius:20px;text-align:center;' +
-        'font-family:-apple-system,sans-serif;box-shadow:0 10px 30px rgba(0,0,0,.25);' +
+        'position:fixed;left:12px;right:68px;bottom:104px;z-index:2147483646;display:none;' +
+        'align-items:center;gap:12px;padding:10px 10px 10px 16px;border-radius:18px;' +
+        'font-family:-apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.22);' +
         (dark ? 'background:#211F1C;color:#F2EEE8;' : 'background:#FFFDFA;color:#1F1D1A;'));
-      var title = document.createElement('div');
-      title.setAttribute('style', 'font-size:20px;font-weight:700');
-      title.textContent = '✓ Tu as tout vu';
-      var text = document.createElement('div');
-      text.setAttribute('style', 'font-size:15px;line-height:21px;opacity:.75');
-      text.textContent = 'Plus bas, il n’y a que des Reels et des contenus masqués par OneForAll.';
+      var words = document.createElement('div');
+      words.setAttribute('style', 'flex:1;min-width:0');
+      cardTitle = document.createElement('div');
+      cardTitle.setAttribute('style', 'font-size:16px;font-weight:700;line-height:21px');
+      cardText = document.createElement('div');
+      cardText.setAttribute('style', 'font-size:13px;line-height:17px;opacity:.75');
+      words.appendChild(cardTitle);
+      words.appendChild(cardText);
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('style',
-        'margin-top:6px;min-height:44px;padding:0 20px;border:0;border-radius:22px;font-size:16px;font-weight:600;' +
+        'flex:none;min-height:44px;padding:0 14px;border:0;border-radius:22px;font-size:15px;font-weight:600;' +
         (dark ? 'background:#8FBFA9;color:#10201A;' : 'background:#3E6B5A;color:#FFFFFF;'));
       btn.textContent = 'Revenir en haut';
       btn.addEventListener('click', function () {
@@ -777,26 +858,51 @@ const RUNTIME = `
         if (first && first.scrollIntoView) first.scrollIntoView({ block: 'start', behavior: 'smooth' });
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
-      c.appendChild(title);
-      c.appendChild(text);
+      c.appendChild(words);
       c.appendChild(btn);
       return c;
     };
+    // Masquée par OneForAll (attribut), ou déjà par le CSS des règles, ou dans une case masquée
+    // (dans ces deux cas, aucune boîte).
+    var isHidden = function (a) {
+      return a.getAttribute('data-sans-reels') === 'hidden' || !a.getClientRects().length;
+    };
+    var feedState = function () {
+      if (location.pathname !== '/') return '';
+      var arts = document.getElementsByTagName('article');
+      if (!arts.length) return '';
+      var H = window.innerHeight, onScreen = false, hidden = 0, hiddenAfter = 0, lastBottom = null;
+      for (var i = 0; i < arts.length; i++) {
+        if (isHidden(arts[i])) { hidden++; hiddenAfter++; continue; }
+        hiddenAfter = 0;
+        var r = arts[i].getBoundingClientRect();
+        if (r.top >= H * 0.9) return ''; // une vraie publication arrive plus bas : pas la fin
+        if (r.bottom > H * 0.1) onScreen = true;
+        lastBottom = r.bottom;
+      }
+      if (!onScreen && hidden && window.scrollY > H * 0.5) return lastBottom === null && hiddenAfter < END_MIN ? '' : 'void';
+      if (hiddenAfter >= END_MIN) {
+        var doc = document.scrollingElement || document.documentElement;
+        if (window.scrollY + H >= doc.scrollHeight - 4 || lastBottom === null || lastBottom < H * 0.6) return 'end';
+      }
+      return '';
+    };
     checkFeedEnd = function () {
-      var show = false;
-      if (location.pathname === '/') {
-        var arts = document.getElementsByTagName('article'), lastVisible = -1, hiddenAfter = 0;
-        for (var i = 0; i < arts.length; i++) {
-          if (arts[i].getAttribute('data-sans-reels') === 'hidden') hiddenAfter++;
-          else { lastVisible = i; hiddenAfter = 0; }
-        }
-        if (hiddenAfter >= FEED_END_MIN) {
-          show = lastVisible < 0 || arts[lastVisible].getBoundingClientRect().bottom < window.innerHeight * 0.6;
-        }
+      var state = feedState();
+      if (state !== endState) { endState = state; endSince = Date.now(); }
+      var show = !!state && Date.now() - endSince >= END_DELAY;
+      // État pas encore assez durable : on revient voir à la fin du délai (même sans défilement).
+      if (state && !show && !endTimer) {
+        endTimer = setTimeout(function () { endTimer = null; endDue = true; needFrame(); }, END_DELAY - (Date.now() - endSince) + 20);
       }
       if (show && !card && document.body) card = buildCard();
       if (card && !card.isConnected && document.body) document.body.appendChild(card);
-      if (card) card.style.display = show ? 'flex' : 'none';
+      if (!card) return;
+      if (show) {
+        cardTitle.textContent = TEXTS[state][0];
+        cardText.textContent = TEXTS[state][1];
+      }
+      card.style.display = show ? 'flex' : 'none';
     };
     // Défilement (de la page ou d'un conteneur) : vérifié au plus une fois par image, sans
     // freiner, après le masquage de cette image (voir onFrame).

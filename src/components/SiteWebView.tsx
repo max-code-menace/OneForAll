@@ -218,9 +218,13 @@ export function SiteWebView({ platform, visible, welcome, holdWelcome, toastRef,
         if (typeof m.path === 'string') setPath(m.path.slice(0, 300));
         break;
       case 'reloading':
-        // Le script recharge la page lui-même : redirection pendant le chargement, ou
-        // redirection douce à laquelle le site n'a pas réagi.
-        if (onThisSite) nextCause.current = m.why === 'early' ? 'redirection au chargement' : 'redirection douce ratée';
+        // Le script recharge la page lui-même : redirection pendant le chargement, redirection
+        // qui demande un vrai chargement (fil Abonnements), ou redirection douce à laquelle le
+        // site n'a pas réagi.
+        if (onThisSite) {
+          nextCause.current =
+            m.why === 'early' ? 'redirection au chargement' : m.why === 'rule' ? 'redirection OneForAll' : 'redirection douce ratée';
+        }
         break;
       case 'unread':
         if (onThisSite && Number.isInteger(m.count) && (m.count as number) >= 0 && (m.count as number) < 10000) {

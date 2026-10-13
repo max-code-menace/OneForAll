@@ -71,6 +71,13 @@ export type Rule = {
   /** Redirection sans bandeau (ex. fil « Abonnements » : à chaque retour à l'accueil). */
   silent?: boolean;
   /**
+   * Redirections de cette règle par un VRAI chargement de la page, pas une navigation douce :
+   * pour un site qui change bien d'adresse mais pas de contenu (Instagram : « ?variant=following »
+   * affichait encore « Pour vous »). Aussi pour les liens réécrits par cette règle.
+   * Ignoré sans risque par les anciennes versions (elles font une navigation douce).
+   */
+  reload?: boolean;
+  /**
    * Empêche de glisser verticalement d'une vidéo plein écran à la suivante
    * (Reel ouvert depuis un message : on le voit, mais pas les suivants).
    * Ne dépend pas du HTML du site : le moteur repère une vidéo qui occupe l'écran.

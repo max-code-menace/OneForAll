@@ -11,9 +11,16 @@
     {
       "id": "ig.followingFeed",
       "label": "Fil : seulement les gens que tu suis",
-      "description": "L’accueil s’ouvre sur le fil « Abonnements » : les publications des comptes que tu suis, des plus récentes aux plus anciennes, sans recommandations.",
+      "description": "L’accueil s’ouvre sur le fil « Abonnements » : les publications des comptes que tu suis, des plus récentes aux plus anciennes, sans recommandations. Toucher Accueil recharge le fil.",
       "defaultEnabled": true,
       "silent": true,
+      "reload": true,
+      "rewriteLinks": [
+        {
+          "selector": "a[href=\"/\"]",
+          "href": "/?variant=following"
+        }
+      ],
       "urls": [
         {
           "pattern": "^/$",
@@ -94,9 +101,15 @@
     {
       "id": "ig.feedReels",
       "label": "Masquer les Reels dans le fil",
-      "description": "Retire les posts du fil qui sont des Reels. Quand il ne reste plus que des Reels, le fil affiche « Tu as tout vu ».",
+      "description": "Retire les posts du fil qui sont des Reels, sans laisser de place vide. Quand il ne reste plus que des Reels, le fil affiche « Tu as tout vu ».",
       "defaultEnabled": true,
       "feedEnd": true,
+      "css": [
+        "/* Masqué dès le 1er calcul de la page, AVANT qu'Instagram ne mesure la publication : son fil",
+        "   ne garde que les publications proches de l'écran et réserve la place des autres d'après",
+        "   leur hauteur mesurée. Masqué plus tard (script), un Reel gardait sa place : grand vide blanc. */",
+        "article:has(a[href*=\"/reel/\"]) { display: none !important; }"
+      ],
       "hide": [
         {
           "selector": "article a[href*=\"/reel/\"]",
