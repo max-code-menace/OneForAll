@@ -96,13 +96,22 @@ const PAGE_HIDDEN_SCRIPT = `
     var d = proto && Object.getOwnPropertyDescriptor(proto, name);
     return d && d.get ? function () { return d.get.call(document); } : null;
   }
-  var realState = real('visibilityState'), realHidden = real('hidden');
-  try {
-    if (realState) Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return hidden ? 'hidden' : realState(); } });
-    if (realHidden) Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return hidden || realHidden(); } });
-    var realFocus = document.hasFocus;
-    if (realFocus) document.hasFocus = function () { return !hidden && realFocus.call(document); };
-  } catch (e) {}
+  // Faux visibilityState/hidden/hasFocus posés SEULEMENT pendant que la page est cachée,
+  // puis retirés : une page affichée garde les fonctions d'origine, intactes. Des
+  // vérifications anti-robot (Facebook…) repèrent les fonctions remplacées.
+  function fake(on) {
+    try {
+      if (!on) {
+        delete document.visibilityState;
+        delete document.hidden;
+        delete document.hasFocus;
+        return;
+      }
+      if (real('visibilityState')) Object.defineProperty(document, 'visibilityState', { configurable: true, get: function () { return 'hidden'; } });
+      if (real('hidden')) Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return true; } });
+      if (proto && proto.hasFocus) Object.defineProperty(document, 'hasFocus', { configurable: true, writable: true, value: function () { return false; } });
+    } catch (e) {}
+  }
   function pauseAll() {
     var media = document.querySelectorAll('video, audio');
     for (var i = 0; i < media.length; i++) { try { media[i].pause(); } catch (e) {} }
@@ -115,6 +124,7 @@ const PAGE_HIDDEN_SCRIPT = `
     h = !!h;
     if (h === hidden) return;
     hidden = h;
+    fake(h);
     if (h) pauseAll();
     try {
       document.dispatchEvent(new Event('visibilitychange'));

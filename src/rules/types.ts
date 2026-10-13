@@ -110,8 +110,9 @@ export type Platform = {
   /**
    * User-agent optionnel. S'il est présent, l'app se présente comme Safari, avec la vraie
    * version d'iOS du téléphone (voir SiteWebView.tsx) : la chaîne elle-même n'est plus
-   * utilisée telle quelle. Utile pour YouTube et Facebook : Google (et Facebook) refusent la connexion
-   * depuis une WebView « reconnue », on se présente donc comme Safari iOS.
+   * utilisée telle quelle. Utile pour YouTube : Google refuse la connexion depuis une WebView
+   * « reconnue », on se présente donc comme Safari iOS. Pas pour Facebook : se dire Safari sans
+   * l'être semblait déclencher sa vérification robot (réponses toujours « invalides »).
    */
   userAgent?: string;
   rules: Rule[];

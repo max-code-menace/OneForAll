@@ -116,6 +116,12 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   était figé sur iOS 18, incohérent avec le vrai moteur. Corrigé (à builder) : `applicationNameForUserAgent` avec la
   vraie version d'iOS (SiteWebView.tsx). Si ça ne suffit pas : regarder les fenêtres pop-up
   (`javaScriptCanOpenWindowsAutomatically`, `onOpenWindow`).
+  13/10 : le test robot passait dans Safari mais toutes les réponses étaient « invalides » dans OneForAll ; le
+  lendemain, connexion sans test (après une connexion dans Safari). Prévention (à tester dans l'app de test) :
+  **plus de déguisement Safari pour Facebook** (`userAgent` retiré de facebook.json : se dire Safari sans l'être
+  est suspect ; YouTube le garde pour Google) et faux `visibilityState`/`hasFocus` posés seulement quand le réseau
+  est caché. Cause exacte non prouvée. Si le test revient : ne pas réessayer en boucle, se connecter d'abord
+  dans Safari (« c'était moi »), puis revenir.
 - Demande de l'utilisateur : barre du haut des sites trop grande. Fait (pas encore buildé) : plus de barre.
   2e design (artifact Claude Design de l'utilisateur, « Prototype animé ») : dans un site, glisser depuis le bord
   **droit** = onglet suivant du réseau, bord **gauche** = onglet précédent (`SITE_TABS` dans `src/lib/sites.ts`,

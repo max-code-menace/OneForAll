@@ -1005,6 +1005,10 @@ async function browserTests() {
     v.pause = () => paused++; // pas de vrai fichier vidéo : on compte les mises en pause
     document.body.appendChild(v);
     out.before = [document.visibilityState, document.hidden];
+    // Page affichée : aucune fonction du navigateur remplacée (repérable par les anti-robots).
+    const untouched = () => ['visibilityState', 'hidden', 'hasFocus'].every((k) => !Object.prototype.hasOwnProperty.call(document, k))
+      && /\[native code\]/.test(String(document.hasFocus));
+    out.untouchedBefore = untouched();
     window.__ONEFORALL_HIDDEN__(true);
     out.hidden = [document.visibilityState, document.hidden, document.hasFocus()];
     out.pausedOnHide = paused;
@@ -1013,6 +1017,7 @@ async function browserTests() {
     window.__ONEFORALL_HIDDEN__(true); // répété : rien de plus
     window.__ONEFORALL_HIDDEN__(false);
     out.shown = [document.visibilityState, document.hidden];
+    out.untouchedAfter = untouched();
     v.dispatchEvent(new Event('play'));
     out.pausedAfter = paused;
     out.events = events;
@@ -1023,6 +1028,7 @@ async function browserTests() {
   assert.equal(vis.pausedOnHide, 1, 'vidéo en pause quand on cache');
   assert.equal(vis.pausedOnPlay, 2, 'lecture arrêtée pendant que c’est caché');
   assert.deepEqual(vis.shown, ['visible', false], 'réaffiché : de nouveau visible');
+  assert.ok(vis.untouchedBefore && vis.untouchedAfter, 'page affichée : fonctions du navigateur d’origine');
   assert.equal(vis.pausedAfter, 2, 'réaffiché : la lecture n’est plus arrêtée');
   assert.equal(vis.events, 2, 'le site est prévenu (visibilitychange) à chaque changement');
   await page.close();
