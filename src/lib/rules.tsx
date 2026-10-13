@@ -11,6 +11,7 @@ import {
 } from 'react';
 
 import { DEFAULT_PLATFORMS, mergeRemoteRules, type Platform, type Rule } from '../rules';
+import { IS_TEST_APP } from './testUpdates';
 
 /**
  * Règles actives de l'app = règles intégrées, remplacées si possible par une
@@ -23,6 +24,11 @@ import { DEFAULT_PLATFORMS, mergeRemoteRules, type Platform, type Rule } from '.
  *  - chaque fichier est vérifié strictement (src/rules/validate.ts) : s'il est
  *    invalide ou inaccessible, on garde les règles précédentes ou intégrées ;
  *  - elle peut être coupée dans les Réglages : l'app n'utilise alors que ses règles intégrées.
+ *
+ * App de TEST (« OneForAll Test ») : coupée par défaut. Elle utilise les règles de la version
+ * de test elle-même, c'est-à-dire celles de la branche envoyée : sans ça, les règles de main
+ * remplaceraient celles de la branche, et une règle modifiée ne pourrait pas être essayée
+ * avant d'être fusionnée.
  */
 
 /** Dossier public du dépôt qui contient les règles (branche main). */
@@ -70,7 +76,7 @@ async function fetchJson(url: string): Promise<unknown> {
 
 export function RulesProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [autoUpdate, setAutoUpdateState] = useState(true);
+  const [autoUpdate, setAutoUpdateState] = useState(!IS_TEST_APP);
   /** Règles téléchargées et validées, par plateforme. */
   const [remote, setRemote] = useState<Record<string, Rule[]>>({});
   const [status, setStatus] = useState<RulesStatus>({ state: 'bundled' });
@@ -118,7 +124,9 @@ export function RulesProvider({ children }: { children: ReactNode }) {
     (async () => {
       let auto = true;
       try {
-        auto = (await AsyncStorage.getItem(AUTO_KEY)) !== 'false';
+        const stored = await AsyncStorage.getItem(AUTO_KEY);
+        // Vraie app : activée sauf si coupée. App de test : coupée sauf si activée (voir plus haut).
+        auto = IS_TEST_APP ? stored === 'true' : stored !== 'false';
         setAutoUpdateState(auto);
         if (auto) {
           const cached = JSON.parse((await AsyncStorage.getItem(CACHE_KEY)) ?? '{}');
