@@ -71,8 +71,13 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
   EAS « Configure expo-updates » (« Unknown error », runtime `file:fingerprint`) avec la politique `fingerprint` ;
   remplacée par un numéro en clair (aucun calcul pendant le build). Cause exacte non vue (logs non fournis).
   La vraie app utilise `runtimeVersion` = `version` (1.0.0), mises à jour coupées.
-  Étapes pour l'utilisateur : (1) `eas device:create` ; (2) créer un jeton sur expo.dev (Account settings →
-  Access tokens) et le coller dans GitHub (secret `EXPO_TOKEN`) ; (3) `eas build --platform ios --profile test`.
+  **En service et vérifié le 13/10** : iPhone enregistré (`eas device:create`, via la vraie app Safari : le
+  navigateur intégré du QR code ne télécharge pas le profil), secret `EXPO_TOKEN` dans GitHub, app de test
+  installée (Mode développeur activé), 1er envoi reçu sur l'iPhone (« ✓ Mise à jour reçue »).
+  **Façon de travailler désormais** : chaque push sur la branche `claude/…` arrive dans l'app de test en ~2 min
+  (suivre le run « Mise à jour de l'app de test » dans GitHub Actions) ; l'utilisateur ferme puis rouvre l'app
+  de test. Un vrai build (TestFlight) seulement quand c'est validé. Le run tourne aussi pour des changements
+  natifs : dans ce cas, augmenter `TEST_RUNTIME` d'abord, sinon l'app de test ne reçoit rien (ou plante).
 - `app.json` contient `owner` et `extra.eas.projectId` (ajoutés par EAS, poussés sur `main`) : à garder.
 - La session Claude **ne peut pas pousser sur `main`** (refusé par l'environnement) : travailler sur la branche
   de la session, puis ouvrir une pull request que l'utilisateur fusionne sur GitHub (« Merge pull request »).
@@ -204,6 +209,8 @@ connexion impossibles dans la session). Seuls les essais de l'utilisateur sur so
     vulnérabilités npm (outils de dev ; ne JAMAIS lancer `npm audit fix --force`).
 
 ## À faire (par ordre)
+- Prochaine session : demander si le **build 6** a été fabriqué/installé (pas confirmé le 13/10 ; il doit être
+  fait APRÈS la PR 8, sinon le build échoue sur `expo-updates`). Les essais passent d'abord par l'app de test.
 0. Protéger `main` (règle de branche) et activer la 2FA GitHub : les règles de `main` tournent chez tout le monde.
    Fait. Build 5 (corrections de l'audit) fabriqué et envoyé. Ensuite : build 6 (onglets retirés + fluidité +
    Fluidité 2) ; vérifier sur iPhone : réseau retrouvé au même endroit après l'accueil, préparation au lancement,
